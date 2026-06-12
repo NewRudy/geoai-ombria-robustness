@@ -1,0 +1,16 @@
+[project]
+name = "geoai-ombria-robustness"
+version = "0.1.0"
+description = "Reproducible code for an OMBRIA Sentinel-1/Sentinel-2 flood-mapping robustness audit."
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.24",
+  "pillow>=10.0",
+  "torch>=2.2",
+  "torchvision>=0.17",
+  "matplotlib>=3.7",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"

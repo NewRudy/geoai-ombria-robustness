@@ -1,0 +1,22 @@
+dataset_root: external/OMBRIA
+epochs: 25
+batch_size: 8
+base_channels: 16
+seeds:
+  - 7
+  - 13
+  - 21
+variants:
+  - multimodal
+  - s1_bitemporal
+train_degradation_modes:
+  clean: none
+  light: modality_dropout_light
+  balanced: modality_dropout_balanced
+test_degradation_modes:
+  - none
+  - patch_after
+  - noise_after
+  - zero_after
+  - zero_all
+checkpoint_rule: validation_best_iou

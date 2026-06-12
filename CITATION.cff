@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the associated article and this repository."
+title: "OMBRIA Sentinel-1/Sentinel-2 Robustness Audit Code"
+authors:
+  - family-names: "Wu"
+    given-names: "Tingkuan"
+  - family-names: "Wu"
+    given-names: "Tingxin"
+  - family-names: "Yang"
+    given-names: "Yang"
+  - family-names: "Chen"
+    given-names: "Bairu"
+year: 2026
+license: "MIT"
+repository-code: "https://github.com/NewRudy/geoai-ombria-robustness"
+preferred-citation:
+  type: article
+  title: "Auditing the Robustness of Multitemporal Sentinel-1/Sentinel-2 Fusion for Flood Mapping under Controlled Optical Degradation"
+  authors:
+    - family-names: "Wu"
+      given-names: "Tingkuan"
+    - family-names: "Wu"
+      given-names: "Tingxin"
+    - family-names: "Yang"
+      given-names: "Yang"
+    - family-names: "Chen"
+      given-names: "Bairu"
+  year: 2026
+  journal: "Remote Sensing"
