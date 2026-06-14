@@ -117,6 +117,31 @@ python scripts/train_ombria_unet.py \
 
 Repeat the S1 fallback command for seeds `13` and `21`, then summarize the run directory with `scripts/summarize_ombria_runs.py`.
 
+## Publication-Upgrade Matrix
+
+For a stronger journal submission package, run the extended matrix:
+
+```bash
+EPOCHS=25 BATCH_SIZE=8 BASE_CHANNELS=16 SEEDS="7 13 21" \
+RUNS_DIR=results/runs/publication_upgrade \
+bash scripts/run_publication_upgrade_matrix.sh
+```
+
+This extended run adds:
+
+- cloud-like Sentinel-2 degradation evaluation (`cloud_after_30`, `cloud_after_50`, `cloud_after_70`);
+- quality-aware multimodal degradation training with binary Sentinel-2 quality channels;
+- validation-selected S1 bitemporal fallback evaluation;
+- S2 bitemporal optical-only baseline evaluation;
+- summary files `publication_upgrade_robustness_summary.*` and `publication_upgrade_baseline_summary.*`;
+- qualitative panels under the extended degradation modes.
+
+The final artifact is written to:
+
+```text
+results/publication_upgrade_artifacts.zip
+```
+
 ## Controlled Sentinel-2 Degradation Modes
 
 The study uses controlled stress tests:

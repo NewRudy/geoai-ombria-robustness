@@ -15,7 +15,16 @@ from geoai_ombria_robustness.ombria import collect_ombria_samples, load_sample, 
 from train_ombria_unet import build_model, variant_channels  # noqa: E402
 
 
-MODES = ("none", "patch_after", "noise_after", "zero_after", "zero_all")
+MODES = (
+    "none",
+    "patch_after",
+    "cloud_after_30",
+    "cloud_after_50",
+    "cloud_after_70",
+    "noise_after",
+    "zero_after",
+    "zero_all",
+)
 
 
 def parse_args() -> argparse.Namespace:
