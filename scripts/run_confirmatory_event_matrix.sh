@@ -12,6 +12,7 @@ PERTURB_SEED="${PERTURB_SEED:-20260710}"
 PYTHON="${PYTHON:-python}"
 RUNS_DIR="${RUNS_DIR:-results/confirmatory/runs}"
 EVAL_DIR="${EVAL_DIR:-results/confirmatory/evaluations}"
+LOG_PATH="${LOG_PATH:-results/confirmatory/run.log}"
 
 case "$MODE" in
   smoke)
@@ -28,7 +29,25 @@ esac
 
 EVAL_MODES="${EVAL_MODES:-none patch_after cloud_after_30 cloud_after_50 cloud_after_70 noise_after zero_after zero_all}"
 
-"$PYTHON" scripts/check_cuda_runtime.py
+mkdir -p "$(dirname "$LOG_PATH")"
+exec > >(tee -a "$LOG_PATH") 2>&1
+export PYTHONUNBUFFERED=1
+echo "=== confirmatory session $(date -u +%Y-%m-%dT%H:%M:%SZ) mode=$MODE seeds=$SEEDS ==="
+
+"$PYTHON" scripts/check_cuda_runtime.py \
+  --json-out results/confirmatory/runtime_manifest.json
+"$PYTHON" -m pip freeze > results/confirmatory/environment_freeze.txt
+"$PYTHON" scripts/write_experiment_manifest.py \
+  --out results/confirmatory/experiment_manifest.json \
+  --mode "$MODE" \
+  --seeds $SEEDS \
+  --epochs "$EPOCHS" \
+  --batch-size "$BATCH_SIZE" \
+  --base-channels "$BASE_CHANNELS" \
+  --split-seed "$SPLIT_SEED" \
+  --perturb-seed "$PERTURB_SEED" \
+  --eval-modes $EVAL_MODES \
+  --ombria-commit "$OMBRIA_COMMIT"
 
 mkdir -p external "$RUNS_DIR" "$EVAL_DIR" results/confirmatory/tables results/confirmatory/figures
 if [ ! -d "$ROOT" ]; then
@@ -126,23 +145,14 @@ panel_seed="$(printf '%s\n' $SEEDS | head -n 1)"
   --root "$ROOT" \
   --clean-checkpoint "$RUNS_DIR/multimodal_none_seed${panel_seed}/best_model.pt" \
   --light-checkpoint "$RUNS_DIR/multimodal_none_train-modality_dropout_light_seed${panel_seed}/best_model.pt" \
+  --control-checkpoint "$RUNS_DIR/multimodal_none_train-quality_matched_light_seed${panel_seed}/best_model.pt" \
   --quality-checkpoint "$RUNS_DIR/multimodal_quality-binary_none_train-quality_matched_light_seed${panel_seed}/best_model.pt" \
   --s1-checkpoint "$RUNS_DIR/s1_bitemporal_none_seed${panel_seed}/best_model.pt" \
   --perturb-seed "$PERTURB_SEED" \
   --out-dir results/confirmatory/figures
 
-"$PYTHON" - <<'PY'
-from pathlib import Path
-from zipfile import ZIP_DEFLATED, ZipFile
-
-root = Path("results/confirmatory")
-out = Path("results/ombria_2021_confirmatory_artifacts.zip")
-with ZipFile(out, "w", ZIP_DEFLATED) as archive:
-    for pattern in ("tables/*", "figures/*", "evaluations/**/summary_metrics.csv", "evaluations/**/per_chip_metrics.csv", "evaluations/**/evaluation_config.json", "runs/*/config.json", "runs/*/splits.json"):
-        for path in sorted(root.glob(pattern)):
-            if path.is_file():
-                archive.write(path)
-print(out)
-PY
+"$PYTHON" scripts/package_confirmatory_artifacts.py \
+  --root results/confirmatory \
+  --out results/ombria_2021_confirmatory_artifacts.zip
 
 cat results/confirmatory/tables/event_heldout_summary.md

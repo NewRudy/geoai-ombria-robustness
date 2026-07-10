@@ -48,7 +48,11 @@ Cloud-like masks are synthetic zero-valued occlusion and are not evidence of obs
 
 ## Qualitative export
 
-Select one chip per event by median positive ground-truth flood fraction, without viewing model outputs. Export one high-resolution panel per state with post-event S2 false color, reference mask, clean-route probability, light-route probability, matched quality-route probability, S1-only probability, and a shared 0–1 color scale.
+Select one chip per event by median positive ground-truth flood fraction, without viewing model outputs. Export one high-resolution panel per state with post-event S2 false color, reference mask, clean-route probability, light-route probability, matched-training control probability, matched quality-map probability, S1-only probability, and a shared 0–1 color scale.
+
+## Evidence package
+
+The returned archive must contain per-epoch training metrics for every route and seed, split and evaluation configurations, per-event and per-chip metrics, qualitative panels, a complete console log, runtime and experiment manifests, a Python environment freeze, and SHA-256 hashes for every packaged evidence file. Packaging fails if any expected route, seed, state, or training trajectory is absent. Model checkpoints remain separate from the compact evidence archive.
 
 ## Interpretation rule
 

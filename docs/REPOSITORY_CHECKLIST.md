@@ -13,6 +13,7 @@ Current code-release state:
 - [x] Kaggle smoke and full notebooks use the immutable release tag.
 - [x] P100 compatibility is checked with an architecture probe and real CUDA convolution.
 - [x] Kaggle clone setup is safe when the notebook is rerun in the same kernel.
+- [x] Returned archives retain training trajectories, runtime provenance, console logs, and file hashes.
 
 Publication metadata still pending:
 
