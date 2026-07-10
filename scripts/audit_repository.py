@@ -31,6 +31,8 @@ def main() -> None:
         "scripts/run_confirmatory_event_matrix.sh",
         "scripts/ensure_cuda_compat.py",
         "scripts/check_cuda_runtime.py",
+        "scripts/write_experiment_manifest.py",
+        "scripts/package_confirmatory_artifacts.py",
         "src/geoai_ombria_robustness/ombria.py",
     ]
     for relative in required:
@@ -62,9 +64,11 @@ def main() -> None:
                 "".join(cell.get("source", [])) for cell in notebook.get("cells", [])
             )
             valid = notebook.get("nbformat") == 4 and all(token in source for token in expected)
-            valid = valid and "v0.1.3-confirmatory" in source
+            valid = valid and "v0.1.4-confirmatory" in source
             valid = valid and "ensure_cuda_compat.py" in source
             valid = valid and "check_cuda_runtime.py" in source
+            valid = valid and "artifact_manifest.json" in source
+            valid = valid and "environment_freeze.txt" in source
             clone_source = "".join(notebook["cells"][1].get("source", []))
             chdir_index = clone_source.find("os.chdir(working)")
             remove_index = clone_source.find("shutil.rmtree(project)")
@@ -116,6 +120,25 @@ def main() -> None:
         "Pinned OMBRIA revision",
         "38a490355f76da8ce27ed051138f03f3492a6e46" in runner_text,
         "The upstream dataset checkout is immutable.",
+    )
+
+    packager = (ROOT / "scripts/package_confirmatory_artifacts.py").read_text()
+    panel_exporter = (ROOT / "scripts/export_confirmatory_event_panels.py").read_text()
+    check(
+        "Paper-grade evidence package",
+        all(
+            token in packager
+            for token in (
+                '"runs/*/metrics.csv"',
+                '"runtime_manifest.json"',
+                '"experiment_manifest.json"',
+                '"environment_freeze.txt"',
+                '"run.log"',
+                '"sha256"',
+            )
+        )
+        and "--control-checkpoint" in panel_exporter,
+        "Training trajectories, provenance, logs, hashes, and the matched control are retained.",
     )
 
     cuda_compat = (ROOT / "scripts/ensure_cuda_compat.py").read_text()

@@ -24,6 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--root", type=Path, default=Path("external/OMBRIA"))
     parser.add_argument("--clean-checkpoint", type=Path, required=True)
     parser.add_argument("--light-checkpoint", type=Path, required=True)
+    parser.add_argument("--control-checkpoint", type=Path, required=True)
     parser.add_argument("--quality-checkpoint", type=Path, required=True)
     parser.add_argument("--s1-checkpoint", type=Path, required=True)
     parser.add_argument("--perturb-seed", type=int, default=20260710)
@@ -80,6 +81,7 @@ def main() -> None:
     models = {
         "clean": load_model(args.clean_checkpoint, "multimodal", "none", device),
         "light": load_model(args.light_checkpoint, "multimodal", "none", device),
+        "control": load_model(args.control_checkpoint, "multimodal", "none", device),
         "quality": load_model(args.quality_checkpoint, "multimodal", "binary", device),
         "s1": load_model(args.s1_checkpoint, "s1_bitemporal", "none", device),
     }
@@ -97,6 +99,7 @@ def main() -> None:
         "checkpoints": {
             "clean": str(args.clean_checkpoint),
             "light": str(args.light_checkpoint),
+            "matched_control": str(args.control_checkpoint),
             "quality": str(args.quality_checkpoint),
             "s1": str(args.s1_checkpoint),
         },
@@ -104,7 +107,7 @@ def main() -> None:
     (args.out_dir / "panel_manifest.json").write_text(json.dumps(manifest, indent=2))
 
     for mode in args.modes:
-        fig, axes = plt.subplots(len(EVENTS), 6, figsize=(18, 11), constrained_layout=True)
+        fig, axes = plt.subplots(len(EVENTS), 7, figsize=(21, 11.5), constrained_layout=True)
         probability_image = None
         for row, event in enumerate(EVENTS):
             sample = selected[event]
@@ -134,6 +137,7 @@ def main() -> None:
             predictions = [
                 predict(models["clean"], multimodal, device),
                 predict(models["light"], multimodal, device),
+                predict(models["control"], multimodal, device),
                 predict(models["quality"], quality_input, device),
                 predict(models["s1"], s1_input, device),
             ]
@@ -161,6 +165,7 @@ def main() -> None:
             "Reference flood mask",
             "Clean training",
             "Light degradation training",
+            "Matched training\n(no quality map)",
             "Matched quality-map route",
             "S1-only reference",
         ]
@@ -175,8 +180,16 @@ def main() -> None:
             pad=0.02,
         )
         colorbar.set_label("Predicted flood probability (0–1)")
+        mode_labels = {
+            "none": "No optical degradation",
+            "cloud_after_50": "50% cloud-like post-event occlusion",
+            "cloud_after_70": "70% cloud-like post-event occlusion",
+            "noise_after": "Post-event optical noise",
+            "zero_after": "Complete post-event S2 absence",
+            "zero_all": "Complete bitemporal S2 absence",
+        }
         fig.suptitle(
-            f"OMBRIA 2021 event-held-out qualitative comparison — {mode}",
+            f"OMBRIA 2021 event-held-out qualitative comparison — {mode_labels.get(mode, mode)}",
             fontsize=16,
             fontweight="bold",
         )
