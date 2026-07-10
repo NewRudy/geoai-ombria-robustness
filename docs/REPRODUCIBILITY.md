@@ -23,4 +23,4 @@ bash scripts/run_confirmatory_event_matrix.sh
 
 ## Important Limitations
 
-The degradation modes are controlled synthetic stress tests. They are not real cloud, cloud-shadow, or atmospheric-correction simulations. The confirmatory uncertainty is based on three model seeds with fixed perturbation repetitions and should not be interpreted as cross-dataset, spatial, or operational uncertainty.
+The degradation modes are controlled synthetic stress tests. They are not real cloud, cloud-shadow, or atmospheric-correction simulations. The confirmatory interval is based on three model seeds with a fixed train/validation split and fixed perturbation panel; it describes model-initialization and training-order variation only and should not be interpreted as event-sampling, split, perturbation-distribution, cross-dataset, spatial, or operational uncertainty.

@@ -47,7 +47,7 @@ Two notebooks are provided:
 - [`notebooks/kaggle_confirmatory_smoke.ipynb`](notebooks/kaggle_confirmatory_smoke.ipynb): one model seed and two epochs; checks the complete runtime path but is not scientific evidence.
 - [`notebooks/kaggle_confirmatory_full.ipynb`](notebooks/kaggle_confirmatory_full.ipynb): three model seeds and 25 epochs; run only after the smoke gate succeeds.
 
-In Kaggle, enable a GPU and Internet access, import the appropriate notebook from this repository, and choose **Run All**. Each notebook clones the immutable `v0.1.4-confirmatory` tag, so the executed code does not drift with the default branch. The notebook first returns to `/kaggle/working`, making a repeated **Run All** safe even when the previous run left the kernel inside the cloned directory. It also detects whether the installed PyTorch wheel contains the active GPU architecture; on P100 (`sm_60`) it automatically installs the official PyTorch 2.7.1 CUDA 12.6 build together with its pinned CUDA runtime dependencies before running a real CUDA convolution gate. A partially installed 2.7.1 stack from an interrupted or older notebook run is repaired automatically.
+In Kaggle, enable a GPU and Internet access, import the appropriate notebook from this repository, and choose **Run All**. Each notebook clones the immutable `v0.1.5-confirmatory` tag, so the executed code does not drift with the default branch. The notebook first returns to `/kaggle/working`, making a repeated **Run All** safe even when the previous run left the kernel inside the cloned directory. It also detects whether the installed PyTorch wheel contains the active GPU architecture; on P100 (`sm_60`) it automatically installs the official PyTorch 2.7.1 CUDA 12.6 build together with its pinned CUDA runtime dependencies before running a real CUDA convolution gate. A partially installed 2.7.1 stack from an interrupted or older notebook run is repaired automatically.
 
 The returned archive is:
 
@@ -55,7 +55,7 @@ The returned archive is:
 results/ombria_2021_confirmatory_artifacts.zip
 ```
 
-The archive retains per-epoch training metrics, runtime and experiment manifests, a package hash manifest, the complete console log, and an environment freeze alongside the evaluation tables and figures. Model checkpoints remain excluded to keep the handoff manageable.
+The archive retains per-epoch training metrics, runtime and experiment manifests, a package hash manifest, validation-selected checkpoint hashes linked to every evaluation configuration, the complete console log, and an environment freeze alongside the evaluation tables and figures. Model weights remain excluded to keep the handoff manageable. Run-level 95% intervals use the Student-t critical value for the three locked model seeds (df = 2) and describe model-training variation under the fixed split and perturbation panel. A one-seed Smoke run reports the interval as not estimable rather than as zero.
 
 See [`docs/KAGGLE.md`](docs/KAGGLE.md) for the short operator guide.
 

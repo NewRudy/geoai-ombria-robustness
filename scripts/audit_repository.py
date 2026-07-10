@@ -39,12 +39,16 @@ def main() -> None:
         check(f"required: {relative}", (ROOT / relative).is_file(), relative)
 
     compile_errors: list[str] = []
-    for path in sorted((ROOT / "scripts").glob("*.py")) + sorted((ROOT / "src").glob("**/*.py")):
+    for path in sorted((ROOT / "scripts").glob("*.py")) + sorted(
+        (ROOT / "src").glob("**/*.py")
+    ):
         try:
             py_compile.compile(str(path), doraise=True)
         except py_compile.PyCompileError as exc:
             compile_errors.append(str(exc))
-    check("Python compile gate", not compile_errors, "; ".join(compile_errors) or "pass")
+    check(
+        "Python compile gate", not compile_errors, "; ".join(compile_errors) or "pass"
+    )
 
     runner = ROOT / "scripts/run_confirmatory_event_matrix.sh"
     shell = subprocess.run(
@@ -53,8 +57,14 @@ def main() -> None:
     check("Shell syntax gate", shell.returncode == 0, shell.stderr.strip() or "pass")
 
     notebook_expectations = {
-        "notebooks/kaggle_confirmatory_smoke.ipynb": ('"MODE": "smoke"', '"EPOCHS": "2"'),
-        "notebooks/kaggle_confirmatory_full.ipynb": ('"MODE": "full"', '"EPOCHS": "25"'),
+        "notebooks/kaggle_confirmatory_smoke.ipynb": (
+            '"MODE": "smoke"',
+            '"EPOCHS": "2"',
+        ),
+        "notebooks/kaggle_confirmatory_full.ipynb": (
+            '"MODE": "full"',
+            '"EPOCHS": "25"',
+        ),
     }
     for relative, expected in notebook_expectations.items():
         path = ROOT / relative
@@ -63,20 +73,23 @@ def main() -> None:
             source = "".join(
                 "".join(cell.get("source", [])) for cell in notebook.get("cells", [])
             )
-            valid = notebook.get("nbformat") == 4 and all(token in source for token in expected)
-            valid = valid and "v0.1.4-confirmatory" in source
+            valid = notebook.get("nbformat") == 4 and all(
+                token in source for token in expected
+            )
+            valid = valid and "v0.1.5-confirmatory" in source
             valid = valid and "ensure_cuda_compat.py" in source
             valid = valid and "check_cuda_runtime.py" in source
             valid = valid and "artifact_manifest.json" in source
+            valid = valid and "checkpoint_manifest.json" in source
+            valid = valid and "archive.testzip()" in source
+            valid = valid and "hashlib.sha256(archive.read" in source
             valid = valid and "environment_freeze.txt" in source
             clone_source = "".join(notebook["cells"][1].get("source", []))
             chdir_index = clone_source.find("os.chdir(working)")
             remove_index = clone_source.find("shutil.rmtree(project)")
             rerun_safe = 0 <= chdir_index < remove_index
             valid = valid and rerun_safe
-            detail = (
-                f"cells={len(notebook.get('cells', []))}, rerun_safe={rerun_safe}"
-            )
+            detail = f"cells={len(notebook.get('cells', []))}, rerun_safe={rerun_safe}"
         except (OSError, json.JSONDecodeError) as exc:
             valid = False
             detail = str(exc)
@@ -114,6 +127,11 @@ def main() -> None:
         and '"event": "ALL"' in evaluator,
         "Four event folders, event/global metrics, and chip rows are required.",
     )
+    check(
+        "Checkpoint identity at evaluation time",
+        '"checkpoint_sha256"' in evaluator and '"checkpoint_bytes"' in evaluator,
+        "Each evaluation config records the exact checkpoint hash and size.",
+    )
 
     runner_text = runner.read_text()
     check(
@@ -123,6 +141,7 @@ def main() -> None:
     )
 
     packager = (ROOT / "scripts/package_confirmatory_artifacts.py").read_text()
+    summarizer = (ROOT / "scripts/summarize_confirmatory_events.py").read_text()
     panel_exporter = (ROOT / "scripts/export_confirmatory_event_panels.py").read_text()
     check(
         "Paper-grade evidence package",
@@ -135,10 +154,16 @@ def main() -> None:
                 '"environment_freeze.txt"',
                 '"run.log"',
                 '"sha256"',
+                '"checkpoint_manifest.json"',
             )
         )
+        and "T_CRITICAL_975_DF2 = 4.302652729911275" in summarizer
+        and "1.96 * stdev" not in summarizer
+        and "not estimable from one seed" in summarizer
+        and "RUN_DIR_TEMPLATES" in packager
+        and "Checkpoint-to-evaluation traceability gate failed" in packager
         and "--control-checkpoint" in panel_exporter,
-        "Training trajectories, provenance, logs, hashes, and the matched control are retained.",
+        "Training trajectories, Student-t intervals, Smoke NA handling, provenance, file hashes, checkpoint-to-evaluation hashes, and the matched control are retained.",
     )
 
     cuda_compat = (ROOT / "scripts/ensure_cuda_compat.py").read_text()
@@ -181,7 +206,8 @@ def main() -> None:
     )
 
     secret_pattern = re.compile(
-        r"(ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|AKIA[0-9A-Z]{16}|BEGIN (?:RSA|OPENSSH|EC) PRIVATE KEY|/" + "Users/)",
+        r"(ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|AKIA[0-9A-Z]{16}|BEGIN (?:RSA|OPENSSH|EC) PRIVATE KEY|/"
+        + "Users/)",
         re.IGNORECASE,
     )
     secret_hits: list[str] = []

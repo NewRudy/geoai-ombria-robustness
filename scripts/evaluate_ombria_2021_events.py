@@ -5,7 +5,6 @@ import csv
 import hashlib
 import json
 import sys
-from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,6 +23,14 @@ from train_ombria_unet import build_model  # noqa: E402
 
 
 EVENTS = ("ALBANIA", "FRANCE", "GUYANA", "TIMOR")
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def parse_args() -> argparse.Namespace:
@@ -86,7 +93,9 @@ def collect_event_samples(root: Path, event: str) -> list[OmbriaSample]:
     ]
 
 
-def stable_sample_seed(base_seed: int, repetition: int, event: str, chip_id: str) -> int:
+def stable_sample_seed(
+    base_seed: int, repetition: int, event: str, chip_id: str
+) -> int:
     token = f"{event}:{chip_id}".encode("utf-8")
     offset = int.from_bytes(hashlib.sha256(token).digest()[:4], "big")
     return (base_seed + repetition * 1_000_003 + offset) % (2**32)
@@ -213,7 +222,9 @@ def evaluate_event(
                         "event": event,
                         "chip_id": sample.chip_id,
                         "flood_fraction": float(read_mask(sample.s2_mask).mean()),
-                        "mean_probability": float(probabilities[batch_index].mean().item()),
+                        "mean_probability": float(
+                            probabilities[batch_index].mean().item()
+                        ),
                         "tp": counts.tp,
                         "fp": counts.fp,
                         "fn": counts.fn,
@@ -235,6 +246,8 @@ def main() -> None:
     if not config_path.exists():
         raise FileNotFoundError(f"Missing checkpoint config: {config_path}")
     config = json.loads(config_path.read_text())
+    checkpoint_sha256 = file_sha256(args.checkpoint)
+    checkpoint_bytes = args.checkpoint.stat().st_size
     base_channels = int(config["base_channels"])
     expected_channels = variant_channels(args.variant, args.s2_quality)
     model = build_model(expected_channels, base_channels)
@@ -249,8 +262,12 @@ def main() -> None:
             {
                 **vars(args),
                 "checkpoint": str(args.checkpoint),
+                "checkpoint_bytes": checkpoint_bytes,
+                "checkpoint_sha256": checkpoint_sha256,
                 "out_dir": str(args.out_dir),
-                "event_counts": {event: len(samples) for event, samples in event_samples.items()},
+                "event_counts": {
+                    event: len(samples) for event, samples in event_samples.items()
+                },
                 "metric_aggregation": "global confusion counts plus per-chip rows",
             },
             indent=2,
@@ -263,7 +280,9 @@ def main() -> None:
     for repetition in range(args.perturb_repetitions):
         pooled = Counts()
         for event, samples in event_samples.items():
-            counts, rows = evaluate_event(model, device, samples, event, args, repetition)
+            counts, rows = evaluate_event(
+                model, device, samples, event, args, repetition
+            )
             pooled.add(counts)
             chip_rows.extend(rows)
             summary_rows.append(

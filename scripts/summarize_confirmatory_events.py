@@ -26,19 +26,36 @@ def read_rows(root: Path) -> list[dict[str, str]]:
     return rows
 
 
-def ci95(values: list[float]) -> float:
-    if len(values) < 2:
-        return 0.0
-    return 1.96 * stdev(values) / math.sqrt(len(values))
+T_CRITICAL_975_DF2 = 4.302652729911275
+
+
+def ci95(values: list[float]) -> float | None:
+    if len(values) == 1:
+        return None
+    if len(values) != 3:
+        raise ValueError(
+            "The locked confirmatory interval is defined for exactly three model seeds"
+        )
+    return T_CRITICAL_975_DF2 * stdev(values) / math.sqrt(len(values))
+
+
+def format_mean_interval(center: float, half_width: float | None) -> str:
+    if half_width is None:
+        return f"{center:.4f} [not estimable from one seed]"
+    return f"{center:.4f} ± {half_width:.4f}"
 
 
 def main() -> None:
     args = parse_args()
     rows = read_rows(args.evaluations_dir)
-    pooled_repetitions: dict[tuple[str, str, int], list[dict[str, str]]] = defaultdict(list)
+    pooled_repetitions: dict[tuple[str, str, int], list[dict[str, str]]] = defaultdict(
+        list
+    )
     for row in rows:
         if row["event"] == "ALL":
-            pooled_repetitions[(row["route"], row["degrade_s2"], int(row["model_seed"]))].append(row)
+            pooled_repetitions[
+                (row["route"], row["degrade_s2"], int(row["model_seed"]))
+            ].append(row)
 
     seed_rows: list[dict[str, object]] = []
     for (route, mode, model_seed), group in sorted(pooled_repetitions.items()):
@@ -64,14 +81,18 @@ def main() -> None:
     for (route, mode), group in sorted(grouped.items()):
         ious = [float(row["iou"]) for row in group]
         f1s = [float(row["f1"]) for row in group]
+        repetition_counts = {int(row["perturb_repetitions"]) for row in group}
+        if len(repetition_counts) != 1:
+            raise ValueError(
+                f"Perturbation repetition coverage differs across model seeds for {(route, mode)}: "
+                f"{sorted(repetition_counts)}"
+            )
         summary.append(
             {
                 "route": route,
                 "degrade_s2": mode,
                 "model_seeds": len(group),
-                "perturb_repetitions_per_seed": min(
-                    int(row["perturb_repetitions"]) for row in group
-                ),
+                "perturb_repetitions_per_seed": next(iter(repetition_counts)),
                 "iou_mean": mean(ious),
                 "iou_ci95_run_level": ci95(ious),
                 "f1_mean": mean(f1s),
@@ -85,18 +106,37 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(summary)
 
+    seed_counts = {int(row["model_seeds"]) for row in summary}
+    if seed_counts == {3}:
+        interval_note = (
+            "The displayed interval is a two-sided 95% Student-t interval (df = 2) "
+            "across three model seeds after averaging perturbation repetitions within each seed."
+        )
+    elif seed_counts == {1}:
+        interval_note = (
+            "This Smoke run has one model seed, so run-level uncertainty is not estimable "
+            "and interval cells are reported as such."
+        )
+    else:
+        raise ValueError(
+            f"Expected one or three model seeds per route/state, found {seed_counts}"
+        )
+
     lines = [
         "# OMBRIA 2021 Event-Held-Out Confirmatory Summary",
         "",
-        "Metrics pool confusion counts across the four released 2021 event folders within each model-seed/perturbation repetition. The displayed interval is descriptive run-level variation across model seeds after averaging perturbation repetitions within each seed.",
+        "Metrics pool confusion counts across the four released 2021 event folders within each model-seed/perturbation repetition. "
+        + interval_note,
         "",
-        "| Route | S2 state | Seeds | Perturbation repetitions/seed | IoU mean ± 95% CI | F1 mean ± 95% CI |",
+        "| Route | S2 state | Seeds | Perturbation repetitions/seed | IoU mean [run-level interval] | F1 mean [run-level interval] |",
         "| --- | --- | ---: | ---: | ---: | ---: |",
     ]
     for row in summary:
         lines.append(
-            "| {route} | {degrade_s2} | {model_seeds} | {perturb_repetitions_per_seed} | "
-            "{iou_mean:.4f} ± {iou_ci95_run_level:.4f} | {f1_mean:.4f} ± {f1_ci95_run_level:.4f} |".format(**row)
+            f"| {row['route']} | {row['degrade_s2']} | {row['model_seeds']} | "
+            f"{row['perturb_repetitions_per_seed']} | "
+            f"{format_mean_interval(float(row['iou_mean']), row['iou_ci95_run_level'])} | "
+            f"{format_mean_interval(float(row['f1_mean']), row['f1_ci95_run_level'])} |"
         )
     args.out_md.write_text("\n".join(lines) + "\n")
     print(args.out_md)
