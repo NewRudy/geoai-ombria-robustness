@@ -11,6 +11,7 @@ Current code-release state:
 - [x] No raw data, checkpoints, tokens, local paths, or generated ZIP archives are tracked.
 - [x] OMBRIA upstream revision is pinned.
 - [x] Kaggle smoke and full notebooks use the immutable release tag.
+- [x] P100 compatibility is checked with an architecture probe and real CUDA convolution.
 
 Publication metadata still pending:
 

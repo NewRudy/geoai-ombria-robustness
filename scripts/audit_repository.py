@@ -29,6 +29,8 @@ def main() -> None:
         "scripts/summarize_confirmatory_events.py",
         "scripts/export_confirmatory_event_panels.py",
         "scripts/run_confirmatory_event_matrix.sh",
+        "scripts/ensure_cuda_compat.py",
+        "scripts/check_cuda_runtime.py",
         "src/geoai_ombria_robustness/ombria.py",
     ]
     for relative in required:
@@ -60,7 +62,9 @@ def main() -> None:
                 "".join(cell.get("source", [])) for cell in notebook.get("cells", [])
             )
             valid = notebook.get("nbformat") == 4 and all(token in source for token in expected)
-            valid = valid and "v0.1.0-confirmatory" in source
+            valid = valid and "v0.1.1-confirmatory" in source
+            valid = valid and "ensure_cuda_compat.py" in source
+            valid = valid and "check_cuda_runtime.py" in source
             detail = f"cells={len(notebook.get('cells', []))}"
         except (OSError, json.JSONDecodeError) as exc:
             valid = False
@@ -105,6 +109,25 @@ def main() -> None:
         "Pinned OMBRIA revision",
         "38a490355f76da8ce27ed051138f03f3492a6e46" in runner_text,
         "The upstream dataset checkout is immutable.",
+    )
+
+    cuda_compat = (ROOT / "scripts/ensure_cuda_compat.py").read_text()
+    cuda_gate = (ROOT / "scripts/check_cuda_runtime.py").read_text()
+    check(
+        "P100 CUDA compatibility guard",
+        all(
+            token in cuda_compat
+            for token in (
+                "torch==2.7.1",
+                "torchvision==0.22.1",
+                "torchaudio==2.7.1",
+                "https://download.pytorch.org/whl/cu126",
+                "required_arch",
+            )
+        )
+        and "torch.nn.Conv2d" in cuda_gate
+        and "torch.cuda.synchronize" in cuda_gate,
+        "Unsupported Pascal/Volta/Turing wheels are replaced before a real CUDA Conv2d gate.",
     )
 
     tracked = subprocess.check_output(

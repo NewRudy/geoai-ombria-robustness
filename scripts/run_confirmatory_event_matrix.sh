@@ -28,6 +28,8 @@ esac
 
 EVAL_MODES="${EVAL_MODES:-none patch_after cloud_after_30 cloud_after_50 cloud_after_70 noise_after zero_after zero_all}"
 
+"$PYTHON" scripts/check_cuda_runtime.py
+
 mkdir -p external "$RUNS_DIR" "$EVAL_DIR" results/confirmatory/tables results/confirmatory/figures
 if [ ! -d "$ROOT" ]; then
   git init -q "$ROOT"
