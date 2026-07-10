@@ -62,10 +62,17 @@ def main() -> None:
                 "".join(cell.get("source", [])) for cell in notebook.get("cells", [])
             )
             valid = notebook.get("nbformat") == 4 and all(token in source for token in expected)
-            valid = valid and "v0.1.1-confirmatory" in source
+            valid = valid and "v0.1.2-confirmatory" in source
             valid = valid and "ensure_cuda_compat.py" in source
             valid = valid and "check_cuda_runtime.py" in source
-            detail = f"cells={len(notebook.get('cells', []))}"
+            clone_source = "".join(notebook["cells"][1].get("source", []))
+            chdir_index = clone_source.find("os.chdir(working)")
+            remove_index = clone_source.find("shutil.rmtree(project)")
+            rerun_safe = 0 <= chdir_index < remove_index
+            valid = valid and rerun_safe
+            detail = (
+                f"cells={len(notebook.get('cells', []))}, rerun_safe={rerun_safe}"
+            )
         except (OSError, json.JSONDecodeError) as exc:
             valid = False
             detail = str(exc)

@@ -12,6 +12,7 @@ Current code-release state:
 - [x] OMBRIA upstream revision is pinned.
 - [x] Kaggle smoke and full notebooks use the immutable release tag.
 - [x] P100 compatibility is checked with an architecture probe and real CUDA convolution.
+- [x] Kaggle clone setup is safe when the notebook is rerun in the same kernel.
 
 Publication metadata still pending:
 
