@@ -29,6 +29,7 @@ TRAIN_S2_DEGRADATIONS = (
     "modality_dropout_light",
     "modality_dropout_balanced",
     "modality_dropout_patch",
+    "quality_matched_light",
     "quality_dropout_light",
     "sar_anchor_light",
     "sar_anchor_severe_w010",
@@ -77,6 +78,7 @@ def choose_train_degrade_s2(mode: str, rng: np.random.Generator) -> str:
         "modality_dropout_light": [0.65, 0.12, 0.08, 0.08, 0.07],
         "modality_dropout_balanced": [0.60, 0.12, 0.08, 0.13, 0.07],
         "modality_dropout_patch": [0.50, 0.15, 0.10, 0.10, 0.15],
+        "quality_matched_light": [0.55, 0.10, 0.07, 0.07, 0.07, 0.07, 0.07],
         "quality_dropout_light": [0.55, 0.10, 0.07, 0.07, 0.07, 0.07, 0.07],
         "sar_anchor_light": [0.45, 0.10, 0.08, 0.07, 0.08, 0.08, 0.07, 0.07],
         "sar_anchor_severe_w010": [0.60, 0.08, 0.08, 0.08, 0.05, 0.05, 0.06],
@@ -85,7 +87,7 @@ def choose_train_degrade_s2(mode: str, rng: np.random.Generator) -> str:
     }
     if mode in schedules:
         choices = ["none", "zero_after", "zero_all", "noise_after", "patch_after"]
-        if mode == "quality_dropout_light":
+        if mode in {"quality_matched_light", "quality_dropout_light"}:
             choices.extend(["cloud_after_30", "cloud_after_50"])
         elif mode == "sar_anchor_light":
             choices.extend(["cloud_after_30", "cloud_after_50", "cloud_after_70"])
@@ -119,6 +121,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--val-fraction", type=float, default=0.15)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument(
+        "--split-seed",
+        type=int,
+        default=20260710,
+        help="Fixed train/validation split seed, independent of the model seed.",
+    )
+    parser.add_argument(
+        "--eval-perturb-seed",
+        type=int,
+        default=20260710,
+        help="Fixed evaluation-perturbation seed, independent of the model seed.",
+    )
     parser.add_argument("--max-train-samples", type=int, default=0)
     parser.add_argument("--eval-checkpoint", type=Path, default=None)
     parser.add_argument("--anchor-checkpoint", type=Path, default=None)
@@ -282,23 +296,33 @@ def evaluate(model, loader, device) -> dict[str, float]:
 
     model.eval()
     loss_total = 0.0
-    metrics_total = {"iou": 0.0, "f1": 0.0, "precision": 0.0, "recall": 0.0, "accuracy": 0.0}
-    batches = 0
+    pixels = 0
+    tp = fp = fn = tn = 0
     with torch.no_grad():
         for x, y in loader:
             x = x.to(device)
             y = y.to(device)
             logits = model(x)
-            loss_total += float(F.binary_cross_entropy_with_logits(logits, y).item())
-            metrics = binary_metrics(logits, y)
-            for key in metrics_total:
-                metrics_total[key] += metrics[key]
-            batches += 1
-    if batches == 0:
+            loss_total += float(
+                F.binary_cross_entropy_with_logits(logits, y, reduction="sum").item()
+            )
+            pixels += int(y.numel())
+            pred = torch.sigmoid(logits) > 0.5
+            truth = y > 0.5
+            tp += int(torch.logical_and(pred, truth).sum().item())
+            fp += int(torch.logical_and(pred, ~truth).sum().item())
+            fn += int(torch.logical_and(~pred, truth).sum().item())
+            tn += int(torch.logical_and(~pred, ~truth).sum().item())
+    if pixels == 0:
         raise RuntimeError("Evaluation loader is empty")
+    eps = 1e-9
     return {
-        "loss": loss_total / batches,
-        **{key: value / batches for key, value in metrics_total.items()},
+        "loss": loss_total / pixels,
+        "iou": tp / (tp + fp + fn + eps),
+        "f1": (2 * tp) / (2 * tp + fp + fn + eps),
+        "precision": tp / (tp + fp + eps),
+        "recall": tp / (tp + fn + eps),
+        "accuracy": (tp + tn) / (tp + fp + fn + tn + eps),
     }
 
 
@@ -318,7 +342,7 @@ def main() -> None:
     train_all = collect_ombria_samples(args.root, "train")
     test_samples = collect_ombria_samples(args.root, "test")
     train_samples, val_samples = split_train_val(
-        train_all, args.val_fraction, args.seed, args.max_train_samples
+        train_all, args.val_fraction, args.split_seed, args.max_train_samples
     )
 
     print(
@@ -373,18 +397,20 @@ def main() -> None:
     with (run_dir / "config.json").open("w") as f:
         json.dump(vars(args), f, indent=2, default=str)
 
-    test_ds = OmbriaTorchDataset(
-        test_samples,
-        args.variant,
-        args.degrade_s2,
-        args.seed,
-        s2_quality=args.s2_quality,
-    ).dataset
-    test_loader = DataLoader(
-        test_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
-    )
-
     if args.eval_checkpoint is not None:
+        test_ds = OmbriaTorchDataset(
+            test_samples,
+            args.variant,
+            args.degrade_s2,
+            args.eval_perturb_seed,
+            s2_quality=args.s2_quality,
+        ).dataset
+        test_loader = DataLoader(
+            test_ds,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.num_workers,
+        )
         model.load_state_dict(torch.load(args.eval_checkpoint, map_location=device))
         test = evaluate(model, test_loader, device)
         checkpoint_config_path = args.eval_checkpoint.parent / "config.json"
@@ -468,12 +494,6 @@ def main() -> None:
             "val_precision",
             "val_recall",
             "val_accuracy",
-            "test_loss",
-            "test_iou",
-            "test_f1",
-            "test_precision",
-            "test_recall",
-            "test_accuracy",
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -513,7 +533,6 @@ def main() -> None:
                 train_batches += 1
 
             val = evaluate(model, val_loader, device)
-            test = evaluate(model, test_loader, device)
             row = {
                 "epoch": epoch,
                 "train_loss": train_loss / max(train_batches, 1),
@@ -523,12 +542,6 @@ def main() -> None:
                 "val_precision": val["precision"],
                 "val_recall": val["recall"],
                 "val_accuracy": val["accuracy"],
-                "test_loss": test["loss"],
-                "test_iou": test["iou"],
-                "test_f1": test["f1"],
-                "test_precision": test["precision"],
-                "test_recall": test["recall"],
-                "test_accuracy": test["accuracy"],
             }
             writer.writerow(row)
             f.flush()

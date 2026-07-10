@@ -1,12 +1,19 @@
 # Repository Release Checklist
 
-Before public release:
+Current code-release state:
 
-- [ ] Confirm final manuscript title and author order.
-- [ ] Confirm license with all authors and institutional policy.
-- [ ] Replace placeholder repository URL in `CITATION.cff`.
+- [x] Repository contains code only; manuscript drafts and private metadata are excluded.
+- [x] Public repository URL is recorded in `CITATION.cff`.
+- [x] MIT license file is present.
+- [x] Confirmatory protocol and evidence boundaries are explicit.
+- [x] `python scripts/audit_repository.py` passes.
+- [x] Python and shell syntax checks pass.
+- [x] No raw data, checkpoints, tokens, local paths, or generated ZIP archives are tracked.
+- [x] OMBRIA upstream revision is pinned.
+- [x] Kaggle smoke and full notebooks use the immutable release tag.
+
+Publication metadata still pending:
+
+- [ ] Confirm the final manuscript title and author order before article submission.
 - [ ] Add article DOI or Zenodo DOI after archive creation.
-- [ ] Run `python -m compileall src scripts`.
-- [ ] Re-run the dry-run data loader command.
-- [ ] Verify that no raw data, checkpoints, tokens, or cloud artifacts are committed.
-- [ ] Create a GitHub release or Zenodo archive after final code freeze.
+- [ ] Add the final journal citation after acceptance.

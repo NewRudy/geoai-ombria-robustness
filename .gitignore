@@ -15,6 +15,8 @@ results/runs/
 *.ckpt
 *.zip
 
-# Local notebooks or scratch exports
-notebooks/
+# Local scratch exports; the two reviewed Kaggle entry notebooks are tracked.
+notebooks/*
+!notebooks/kaggle_confirmatory_smoke.ipynb
+!notebooks/kaggle_confirmatory_full.ipynb
 scratch/

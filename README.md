@@ -1,54 +1,88 @@
 # OMBRIA Sentinel-1/Sentinel-2 Robustness Audit
 
-This repository contains the reproducible code package for the manuscript:
+Reproducible code for the manuscript:
 
 > Auditing the Robustness of Multitemporal Sentinel-1/Sentinel-2 Fusion for Flood Mapping under Controlled Optical Degradation
 
-The study evaluates whether multitemporal Sentinel-1/Sentinel-2 fusion for flood mapping remains reliable when Sentinel-2 inputs are partially degraded, noisy, or absent. It uses the public OMBRIA dataset and reports a controlled robustness audit rather than a new state-of-the-art architecture.
+The project audits how multitemporal Sentinel-1/Sentinel-2 flood segmentation behaves when the Sentinel-2 stream is clean, synthetically occluded, noisy, partially missing, or completely absent. It is an OMBRIA-only controlled robustness study, not evidence of operational deployment, observed-cloud robustness, state-of-the-art performance, or universal generalization.
 
-## Repository Status
-
-This is a cleaned academic code repository prepared for manuscript submission. It intentionally excludes raw data, model checkpoints, Kaggle cache files, notebook scratch work, and large training artifacts.
+## Repository scope
 
 Included:
 
-- OMBRIA data loading utilities.
-- Compact U-Net training and evaluation script.
-- Robustness-matrix execution script.
-- Summary, analysis, plotting, and qualitative-panel export scripts.
-- Reported summary tables and the main robustness figure.
+- OMBRIA data loading and controlled Sentinel-2 stress generation;
+- compact U-Net training and validation-only checkpoint selection;
+- exploratory public-split evaluation scripts;
+- locked 2021 event-held-out confirmation scripts;
+- global and per-chip metric export;
+- matched quality-map ablation;
+- high-resolution qualitative panels with an S1-only reference;
+- Kaggle smoke and full-run notebooks.
 
 Excluded:
 
-- Raw OMBRIA data.
-- Trained model checkpoints.
-- Cloud execution logs and intermediate artifacts.
-- Manuscript drafting files.
+- raw OMBRIA data;
+- model checkpoints and training caches;
+- credentials and Kaggle tokens;
+- manuscript drafts and private submission metadata.
 
-## Main Result Summary
+## Current exploratory evidence
 
-The manuscript reports three-seed mean results. Clean Sentinel-1/Sentinel-2 fusion gives the strongest clean-input IoU, but clean multimodal training is brittle under complete Sentinel-2 removal. Lightweight degradation training improves robustness under controlled partial/noisy optical degradation, while complete Sentinel-2 absence is better handled by an explicit bitemporal Sentinel-1 fallback.
+The manuscript's current public-split matrix reports three seed-controlled runs. Selected mean IoU values are:
 
-Key reported values:
+| Route and state | IoU |
+| --- | ---: |
+| Clean multimodal, clean input | 0.6821 |
+| Light degradation training, clean input | 0.6521 |
+| Clean multimodal, all S2 missing | 0.0447 |
+| Light degradation training, all S2 missing | 0.3689 |
+| S1-only reference | 0.5071 |
 
-- Clean multimodal, clean input: IoU `0.6834`, F1 `0.8053`.
-- Light degradation training, clean input: IoU `0.6540`, F1 `0.7831`.
-- Clean multimodal, all S2 missing: IoU `0.0466`, F1 `0.0790`.
-- Light degradation training, all S2 missing: IoU `0.3124`, F1 `0.4479`.
-- S1 bitemporal fallback: IoU `0.4092`, F1 `0.5642`.
+These results are exploratory because the public test matrix informed route comparison during development. The separately released 2021 event folders are reserved for the locked confirmation described below.
 
-See:
+## Kaggle: click-to-run workflow
 
-- `results/tables/main_results.md`
-- `results/tables/seed_level_uncertainty.md`
-- `results/tables/fallback_policy.md`
-- `results/figures/figure_robustness_tradeoff.svg`
+Two notebooks are provided:
 
-## Environment
+- [`notebooks/kaggle_confirmatory_smoke.ipynb`](notebooks/kaggle_confirmatory_smoke.ipynb): one model seed and two epochs; checks the complete runtime path but is not scientific evidence.
+- [`notebooks/kaggle_confirmatory_full.ipynb`](notebooks/kaggle_confirmatory_full.ipynb): three model seeds and 25 epochs; run only after the smoke gate succeeds.
 
-Python `3.10` or newer is recommended.
+In Kaggle, enable a GPU and Internet access, import the appropriate notebook from this repository, and choose **Run All**. Each notebook clones the immutable `v0.1.0-confirmatory` tag, so the executed code does not drift with the default branch.
 
-Install dependencies:
+The returned archive is:
+
+```text
+results/ombria_2021_confirmatory_artifacts.zip
+```
+
+See [`docs/KAGGLE.md`](docs/KAGGLE.md) for the short operator guide.
+
+## Locked 2021 event-held-out confirmation
+
+Training uses only the released `OmbriaS1/train` and `OmbriaS2/train` folders. Confirmation uses the four separately released event folders under `2021/`:
+
+| Event folder | Matched chips |
+| --- | ---: |
+| ALBANIA | 22 |
+| FRANCE | 88 |
+| GUYANA | 30 |
+| TIMOR | 10 |
+| **Total** | **150** |
+
+The locked protocol uses:
+
+- split seed `20260710`, independent of model seeds `7`, `13`, and `21`;
+- perturbation seed `20260710` and three fixed realizations for stochastic states;
+- validation IoU only for checkpoint selection;
+- globally accumulated TP/FP/FN/TN metrics plus per-chip rows;
+- identical degradation schedules with and without binary quality maps;
+- a bitemporal S1-only reference for every tested Sentinel-2 state.
+
+Read [`docs/CONFIRMATORY_PROTOCOL.md`](docs/CONFIRMATORY_PROTOCOL.md) before changing any locked parameter.
+
+## Local execution
+
+Python 3.10 or newer is recommended.
 
 ```bash
 python -m venv .venv
@@ -57,118 +91,43 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-For GPU training, install a PyTorch build compatible with the available CUDA runtime. Kaggle Tesla T4 runs used PyTorch with CUDA and batch size `8`.
-
-## Data
-
-The code expects the OMBRIA dataset in:
-
-```text
-external/OMBRIA/
-```
-
-The matrix script will clone the public OMBRIA repository automatically if the path does not exist:
+Smoke gate:
 
 ```bash
-ROOT=external/OMBRIA bash scripts/run_ombria_followup_matrix.sh
+MODE=smoke EPOCHS=2 bash scripts/run_confirmatory_event_matrix.sh
 ```
 
-If the automatic clone route is unavailable, download OMBRIA manually and keep the same directory layout:
-
-```text
-external/OMBRIA/
-  OmbriaS1/
-    train/
-    test/
-  OmbriaS2/
-    train/
-    test/
-```
-
-## Reproducing the Robustness Matrix
-
-Run the full three-seed matrix:
+Full locked run:
 
 ```bash
-EPOCHS=25 BATCH_SIZE=8 BASE_CHANNELS=16 SEEDS="7 13 21" \
-RUNS_DIR=results/runs/ombria_robustness \
-bash scripts/run_ombria_followup_matrix.sh
+MODE=full EPOCHS=25 bash scripts/run_confirmatory_event_matrix.sh
 ```
 
-The script trains and evaluates:
+The runner fetches OMBRIA at commit `38a490355f76da8ce27ed051138f03f3492a6e46` and verifies the required train and 2021 event folders before starting.
 
-- clean multimodal Sentinel-1/Sentinel-2 fusion;
-- lightweight Sentinel-2 degradation training;
-- balanced Sentinel-2 degradation training;
-- clean, patch, noise, post-S2-missing, and all-S2-missing test conditions.
+## Controlled Sentinel-2 states
 
-The S1-only fallback can be trained with:
+- `none`: unmodified input.
+- `patch_after`: eight zero-valued post-event patches.
+- `cloud_after_30`, `cloud_after_50`, `cloud_after_70`: synthetic zero-valued elliptical occlusion masks.
+- `noise_after`: post-event Sentinel-2 replaced with uniform random noise.
+- `zero_after`: post-event Sentinel-2 set to zero.
+- `zero_all`: both Sentinel-2 timestamps set to zero.
 
-```bash
-python scripts/train_ombria_unet.py \
-  --root external/OMBRIA \
-  --variant s1_bitemporal \
-  --epochs 25 \
-  --batch-size 8 \
-  --base-channels 16 \
-  --seed 7 \
-  --out-dir results/runs/ombria_s1_fallback
-```
+The cloud-like masks are synthetic occlusion and must not be relabeled as observed clouds, cloud shadows, or atmospheric-correction errors.
 
-Repeat the S1 fallback command for seeds `13` and `21`, then summarize the run directory with `scripts/summarize_ombria_runs.py`.
-
-## Publication-Upgrade Matrix
-
-For a stronger journal submission package, run the extended matrix:
-
-```bash
-EPOCHS=25 BATCH_SIZE=8 BASE_CHANNELS=16 SEEDS="7 13 21" \
-RUNS_DIR=results/runs/publication_upgrade \
-bash scripts/run_publication_upgrade_matrix.sh
-```
-
-This extended run adds:
-
-- cloud-like Sentinel-2 degradation evaluation (`cloud_after_30`, `cloud_after_50`, `cloud_after_70`);
-- quality-aware multimodal degradation training with binary Sentinel-2 quality channels;
-- validation-selected S1 bitemporal fallback evaluation;
-- S2 bitemporal optical-only baseline evaluation;
-- summary files `publication_upgrade_robustness_summary.*` and `publication_upgrade_baseline_summary.*`;
-- qualitative panels under the extended degradation modes.
-
-The final artifact is written to:
+## Repository structure
 
 ```text
-results/publication_upgrade_artifacts.zip
+configs/                         Configuration examples
+data/                            Placeholder only; raw data is not committed
+docs/                            Data, protocol, and reproducibility notes
+notebooks/                       Kaggle smoke and full-run entrypoints
+results/tables/                  Audited exploratory summary tables
+scripts/                         Training, evaluation, export, and runner scripts
+src/geoai_ombria_robustness/     Dataset and degradation utilities
 ```
 
-## Controlled Sentinel-2 Degradation Modes
+## Citation and license
 
-The study uses controlled stress tests:
-
-- `patch_after`: zero-valued patches in post-event Sentinel-2.
-- `noise_after`: post-event Sentinel-2 replaced by random uniform noise.
-- `zero_after`: post-event Sentinel-2 replaced by zeros.
-- `zero_all`: both pre-event and post-event Sentinel-2 replaced by zeros.
-
-These are not real cloud masks and should not be interpreted as operational cloud-robustness evidence.
-
-## Repository Structure
-
-```text
-configs/                         Configuration examples.
-data/                            Placeholder only; raw data is not committed.
-docs/                            Data, reproducibility, and result notes.
-results/figures/                 Lightweight reported figure assets.
-results/tables/                  Reported summary tables.
-scripts/                         Training, evaluation, analysis, and plotting scripts.
-src/geoai_ombria_robustness/     Dataset and utility code.
-```
-
-## Citation
-
-If this repository supports a published article, please cite the article and this code archive. A `CITATION.cff` file is included and should be updated with the final DOI after acceptance or archive deposit.
-
-## License
-
-Code is released under the MIT License unless institutional policy requires a different license before public release.
+Citation metadata is available in [`CITATION.cff`](CITATION.cff). Code is released under the MIT License. OMBRIA remains subject to the terms and citation requirements of its original repository and publication.
