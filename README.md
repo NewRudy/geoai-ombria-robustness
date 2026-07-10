@@ -47,7 +47,7 @@ Two notebooks are provided:
 - [`notebooks/kaggle_confirmatory_smoke.ipynb`](notebooks/kaggle_confirmatory_smoke.ipynb): one model seed and two epochs; checks the complete runtime path but is not scientific evidence.
 - [`notebooks/kaggle_confirmatory_full.ipynb`](notebooks/kaggle_confirmatory_full.ipynb): three model seeds and 25 epochs; run only after the smoke gate succeeds.
 
-In Kaggle, enable a GPU and Internet access, import the appropriate notebook from this repository, and choose **Run All**. Each notebook clones the immutable `v0.1.0-confirmatory` tag, so the executed code does not drift with the default branch.
+In Kaggle, enable a GPU and Internet access, import the appropriate notebook from this repository, and choose **Run All**. Each notebook clones the immutable `v0.1.1-confirmatory` tag, so the executed code does not drift with the default branch. The notebook detects whether the installed PyTorch wheel contains the active GPU architecture; on P100 (`sm_60`) it automatically installs the official PyTorch 2.7.1 CUDA 12.6 compatibility build before running a real CUDA convolution gate.
 
 The returned archive is:
 

@@ -1,6 +1,8 @@
 # Kaggle Operator Guide
 
-The notebooks in `notebooks/` are the supported Kaggle entrypoints. They clone the immutable `v0.1.0-confirmatory` tag from GitHub, install dependencies, compile-check the scripts, execute the matrix, verify the result archive, and expose a download link.
+The notebooks in `notebooks/` are the supported Kaggle entrypoints. They clone the immutable `v0.1.1-confirmatory` tag from GitHub, install dependencies, verify CUDA compatibility, compile-check the scripts, execute the matrix, verify the result archive, and expose a download link.
+
+Kaggle P100 uses Pascal compute capability `sm_60`. Current CUDA 12.8 PyTorch wheels can omit that architecture, producing `no kernel image is available for execution on the device`. The notebooks detect this condition and install the official PyTorch 2.7.1 CUDA 12.6 build, then run a real `Conv2d` CUDA gate before any experiment starts. T4 and other already-supported GPUs keep the installed PyTorch build.
 
 ## One-time Kaggle settings
 
