@@ -13,7 +13,8 @@ Current code-release state:
 - [x] Kaggle smoke and full notebooks use the immutable release tag.
 - [x] P100 compatibility is checked with an architecture probe and real CUDA convolution.
 - [x] Kaggle clone setup is safe when the notebook is rerun in the same kernel.
-- [x] Returned archives retain training trajectories, runtime provenance, console logs, and file hashes.
+- [x] Returned archives retain training trajectories, runtime provenance, console logs, file hashes, and checkpoint hashes linked to every evaluation configuration.
+- [x] Three-seed 95% intervals use the Student-t critical value for df = 2; one-seed Smoke intervals are explicitly not estimable.
 
 Publication metadata still pending:
 

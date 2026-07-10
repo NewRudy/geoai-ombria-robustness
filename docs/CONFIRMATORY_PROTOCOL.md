@@ -43,7 +43,7 @@ Cloud-like masks are synthetic zero-valued occlusion and are not evidence of obs
 - Primary: flood IoU from globally accumulated TP/FP/FN counts across all 150 chips.
 - Secondary: F1, precision, recall, and accuracy from the same global counts.
 - Diagnostic: per-event global metrics and per-chip metrics.
-- Aggregation: average perturbation repetitions within each model seed, then report mean and descriptive 95% CI across model seeds.
+- Aggregation: average perturbation repetitions within each model seed, then report the mean and a two-sided 95% Student-t interval across the three model seeds (df = 2). With the split and perturbation panel fixed, this interval describes model-initialization and training-order variation only; it is not an event-, split-, perturbation-, spatial-, or population-level interval.
 - No null-hypothesis significance test is planned for three model seeds.
 
 ## Qualitative export
@@ -52,7 +52,7 @@ Select one chip per event by median positive ground-truth flood fraction, withou
 
 ## Evidence package
 
-The returned archive must contain per-epoch training metrics for every route and seed, split and evaluation configurations, per-event and per-chip metrics, qualitative panels, a complete console log, runtime and experiment manifests, a Python environment freeze, and SHA-256 hashes for every packaged evidence file. Packaging fails if any expected route, seed, state, or training trajectory is absent. Model checkpoints remain separate from the compact evidence archive.
+The returned archive must contain per-epoch training metrics for every route and seed, split and evaluation configurations, per-event and per-chip metrics, qualitative panels, a complete console log, runtime and experiment manifests, a Python environment freeze, and SHA-256 hashes for every packaged evidence file. Each evaluation configuration records the hash and byte size of its validation-selected checkpoint; packaging verifies those records against the expected route-by-seed checkpoint paths and emits a checkpoint manifest without including the weights. Packaging fails if any expected route, seed, state, trajectory, checkpoint identity, or evaluation link is absent.
 
 ## Interpretation rule
 

@@ -21,7 +21,16 @@ PATTERNS = (
     "experiment_manifest.json",
     "environment_freeze.txt",
     "run.log",
+    "checkpoint_manifest.json",
 )
+
+RUN_DIR_TEMPLATES = {
+    "clean": "multimodal_none_seed{seed}",
+    "light": "multimodal_none_train-modality_dropout_light_seed{seed}",
+    "matched_control": "multimodal_none_train-quality_matched_light_seed{seed}",
+    "matched_quality": "multimodal_quality-binary_none_train-quality_matched_light_seed{seed}",
+    "s1_reference": "s1_bitemporal_none_seed{seed}",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,11 +57,25 @@ def main() -> None:
     modes = experiment["evaluation_modes"]
     expected_runs = len(seeds) * len(routes)
     expected_evaluations = expected_runs * len(modes)
+    if set(routes) != set(RUN_DIR_TEMPLATES):
+        raise RuntimeError(f"Unknown confirmatory route set: {routes}")
+    checkpoint_by_route_seed = {
+        (route, int(seed)): root
+        / "runs"
+        / RUN_DIR_TEMPLATES[route].format(seed=seed)
+        / "best_model.pt"
+        for route in routes
+        for seed in seeds
+    }
+    expected_checkpoints = set(checkpoint_by_route_seed.values())
+    actual_checkpoints = set(root.glob("runs/*/best_model.pt"))
+    checkpoints = sorted(expected_checkpoints)
 
     checks = {
         "training_configs": (len(list(root.glob("runs/*/config.json"))), expected_runs),
         "training_splits": (len(list(root.glob("runs/*/splits.json"))), expected_runs),
         "training_metrics": (len(list(root.glob("runs/*/metrics.csv"))), expected_runs),
+        "validation_selected_checkpoints": (len(checkpoints), expected_runs),
         "evaluation_configs": (
             len(list(root.glob("evaluations/**/evaluation_config.json"))),
             expected_evaluations,
@@ -69,6 +92,93 @@ def main() -> None:
     failed = {name: counts for name, counts in checks.items() if counts[0] != counts[1]}
     if failed:
         raise RuntimeError(f"Artifact completeness gate failed: {failed}")
+    if actual_checkpoints != expected_checkpoints:
+        missing = sorted(
+            str(path.relative_to(root))
+            for path in expected_checkpoints - actual_checkpoints
+        )
+        unexpected = sorted(
+            str(path.relative_to(root))
+            for path in actual_checkpoints - expected_checkpoints
+        )
+        raise RuntimeError(
+            f"Checkpoint path coverage mismatch; missing={missing}, unexpected={unexpected}"
+        )
+
+    checkpoint_hashes = {path: sha256(path) for path in checkpoints}
+    evaluation_keys: list[tuple[str, int, str]] = []
+    evaluation_counts = {path: 0 for path in checkpoints}
+    evaluation_errors: list[str] = []
+    for config_path in sorted(root.glob("evaluations/**/evaluation_config.json")):
+        config = json.loads(config_path.read_text())
+        key = (str(config["route"]), int(config["model_seed"]))
+        mode = str(config["degrade_s2"])
+        evaluation_keys.append((key[0], key[1], mode))
+        expected_checkpoint = checkpoint_by_route_seed.get(key)
+        if expected_checkpoint is None:
+            evaluation_errors.append(
+                f"unknown route/seed in {config_path.relative_to(root)}"
+            )
+            continue
+        evaluation_counts[expected_checkpoint] += 1
+        configured_checkpoint = Path(config["checkpoint"])
+        if not configured_checkpoint.is_absolute():
+            configured_checkpoint = (Path.cwd() / configured_checkpoint).resolve()
+        if configured_checkpoint != expected_checkpoint.resolve():
+            evaluation_errors.append(
+                f"checkpoint path mismatch in {config_path.relative_to(root)}"
+            )
+        if config.get("checkpoint_sha256") != checkpoint_hashes[expected_checkpoint]:
+            evaluation_errors.append(
+                f"checkpoint hash mismatch in {config_path.relative_to(root)}"
+            )
+        if (
+            int(config.get("checkpoint_bytes", -1))
+            != expected_checkpoint.stat().st_size
+        ):
+            evaluation_errors.append(
+                f"checkpoint size mismatch in {config_path.relative_to(root)}"
+            )
+
+    expected_evaluation_keys = {
+        (route, int(seed), mode) for route in routes for seed in seeds for mode in modes
+    }
+    if set(evaluation_keys) != expected_evaluation_keys or len(evaluation_keys) != len(
+        expected_evaluation_keys
+    ):
+        evaluation_errors.append(
+            "route/seed/mode evaluation-config coverage is incomplete or duplicated"
+        )
+    for checkpoint, count in evaluation_counts.items():
+        if count != len(modes):
+            evaluation_errors.append(
+                f"{checkpoint.relative_to(root)} is referenced by {count} evaluations; expected {len(modes)}"
+            )
+    if evaluation_errors:
+        raise RuntimeError(
+            f"Checkpoint-to-evaluation traceability gate failed: {evaluation_errors}"
+        )
+
+    checkpoint_manifest_path = root / "checkpoint_manifest.json"
+    checkpoint_manifest_path.write_text(
+        json.dumps(
+            {
+                "schema": "geoai-ombria-confirmatory-checkpoints-v1",
+                "note": "Weights are excluded from the returned archive; these hashes identify the validation-selected checkpoints used for evaluation.",
+                "checkpoints": [
+                    {
+                        "path": str(path.relative_to(root)),
+                        "bytes": path.stat().st_size,
+                        "sha256": checkpoint_hashes[path],
+                        "evaluation_config_count": evaluation_counts[path],
+                    }
+                    for path in checkpoints
+                ],
+            },
+            indent=2,
+        )
+        + "\n"
+    )
 
     files: list[Path] = []
     for pattern in PATTERNS:
