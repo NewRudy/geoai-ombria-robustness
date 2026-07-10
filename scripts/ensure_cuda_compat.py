@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from importlib import metadata
 
 
 LEGACY_CUDA_INDEX = "https://download.pytorch.org/whl/cu126"
@@ -11,6 +12,9 @@ LEGACY_PACKAGES = (
     "torchvision==0.22.1",
     "torchaudio==2.7.1",
 )
+REQUIRED_RUNTIME_DISTRIBUTIONS = {
+    "nvidia-cusparselt-cu12": "0.6.3",
+}
 
 
 def runtime_info() -> dict[str, object]:
@@ -31,8 +35,56 @@ def runtime_info() -> dict[str, object]:
     }
 
 
+def installed_base_version(distribution: str) -> str | None:
+    try:
+        return metadata.version(distribution).split("+", 1)[0]
+    except metadata.PackageNotFoundError:
+        return None
+
+
+def install_legacy_stack() -> None:
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--force-reinstall",
+            "--no-cache-dir",
+            *LEGACY_PACKAGES,
+            "--index-url",
+            LEGACY_CUDA_INDEX,
+        ],
+        check=True,
+    )
+    missing = {
+        distribution: (expected, installed_base_version(distribution))
+        for distribution, expected in REQUIRED_RUNTIME_DISTRIBUTIONS.items()
+        if installed_base_version(distribution) != expected
+    }
+    if missing:
+        raise RuntimeError(
+            f"CUDA 12.6 runtime dependency installation is incomplete: {missing}"
+        )
+    print(
+        "Compatibility build and CUDA runtime dependencies installed. The next "
+        "command runs in a fresh Python process and verifies an actual CUDA convolution."
+    )
+
+
 def main() -> None:
-    info = runtime_info()
+    try:
+        info = runtime_info()
+    except Exception as exc:
+        if installed_base_version("torch") == "2.7.1":
+            print(
+                "PyTorch 2.7.1 is present but cannot import; repairing the complete "
+                f"CUDA 12.6 dependency stack. Import error: {exc!r}"
+            )
+            install_legacy_stack()
+            return
+        raise
     print("CUDA runtime before compatibility check:")
     print(json.dumps(info, indent=2))
     if info["required_arch"] in info["compiled_arches"]:
@@ -50,26 +102,7 @@ def main() -> None:
         "Current PyTorch does not contain the GPU architecture; installing the "
         "official CUDA 12.6 compatibility build for Pascal/Volta/Turing."
     )
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--upgrade",
-            "--force-reinstall",
-            "--no-deps",
-            "--no-cache-dir",
-            *LEGACY_PACKAGES,
-            "--index-url",
-            LEGACY_CUDA_INDEX,
-        ],
-        check=True,
-    )
-    print(
-        "Compatibility build installed. The next command runs in a fresh Python "
-        "process and verifies an actual CUDA convolution."
-    )
+    install_legacy_stack()
 
 
 if __name__ == "__main__":

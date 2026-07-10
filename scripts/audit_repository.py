@@ -62,7 +62,7 @@ def main() -> None:
                 "".join(cell.get("source", [])) for cell in notebook.get("cells", [])
             )
             valid = notebook.get("nbformat") == 4 and all(token in source for token in expected)
-            valid = valid and "v0.1.2-confirmatory" in source
+            valid = valid and "v0.1.3-confirmatory" in source
             valid = valid and "ensure_cuda_compat.py" in source
             valid = valid and "check_cuda_runtime.py" in source
             clone_source = "".join(notebook["cells"][1].get("source", []))
@@ -132,9 +132,11 @@ def main() -> None:
                 "required_arch",
             )
         )
+        and '"--no-deps"' not in cuda_compat
+        and "nvidia-cusparselt-cu12" in cuda_compat
         and "torch.nn.Conv2d" in cuda_gate
         and "torch.cuda.synchronize" in cuda_gate,
-        "Unsupported Pascal/Volta/Turing wheels are replaced before a real CUDA Conv2d gate.",
+        "The complete CUDA 12.6 stack is installed before a real CUDA Conv2d gate.",
     )
 
     tracked = subprocess.check_output(
