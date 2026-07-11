@@ -1,6 +1,6 @@
 [project]
 name = "geoai-ombria-robustness"
-version = "0.1.5"
+version = "0.2.0"
 description = "Reproducible code for an OMBRIA Sentinel-1/Sentinel-2 flood-mapping robustness audit."
 requires-python = ">=3.10"
 dependencies = [

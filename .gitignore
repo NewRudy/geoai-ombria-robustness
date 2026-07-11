@@ -19,4 +19,6 @@ results/runs/
 notebooks/*
 !notebooks/kaggle_confirmatory_smoke.ipynb
 !notebooks/kaggle_confirmatory_full.ipynb
+!notebooks/kaggle_sensor_state_v2_smoke.ipynb
+!notebooks/kaggle_sensor_state_v2_full.ipynb
 scratch/

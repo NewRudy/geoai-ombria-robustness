@@ -16,6 +16,8 @@ VARIANTS = (
     "multimodal",
 )
 
+S2_QUALITY_MODES = ("none", "binary", "mislocalized")
+
 
 @dataclass(frozen=True)
 class OmbriaSample:
@@ -83,15 +85,15 @@ def variant_channels(variant: str, s2_quality: str = "none") -> int:
         "s2_bitemporal": 6,
         "multimodal": 8,
     }
-    if s2_quality not in {"none", "binary"}:
-        raise ValueError("s2_quality must be 'none' or 'binary'")
+    if s2_quality not in S2_QUALITY_MODES:
+        raise ValueError(f"s2_quality must be one of {S2_QUALITY_MODES}")
     try:
         base_channels = channels[variant]
     except KeyError as exc:
         raise ValueError(
             f"Unknown variant {variant!r}; choose from {VARIANTS}"
         ) from exc
-    if variant == "multimodal" and s2_quality == "binary":
+    if variant == "multimodal" and s2_quality != "none":
         return base_channels + 2
     return base_channels
 
@@ -116,8 +118,8 @@ def load_sample(
 ) -> tuple[np.ndarray, np.ndarray]:
     if variant not in VARIANTS:
         raise ValueError(f"Unknown variant {variant!r}; choose from {VARIANTS}")
-    if s2_quality not in {"none", "binary"}:
-        raise ValueError("s2_quality must be 'none' or 'binary'")
+    if s2_quality not in S2_QUALITY_MODES:
+        raise ValueError(f"s2_quality must be one of {S2_QUALITY_MODES}")
 
     if rng is None:
         rng = np.random.default_rng()
@@ -127,7 +129,9 @@ def load_sample(
     s2_before = read_image(sample.s2_before, "RGB")
     s2_after = read_image(sample.s2_after, "RGB")
 
-    s2_before, s2_after = degrade_s2_pair(s2_before, s2_after, degrade_s2, rng)
+    degradation = degrade_s2_pair_with_quality(s2_before, s2_after, degrade_s2, rng)
+    s2_before = degradation.before
+    s2_after = degradation.after
 
     if variant == "s1_after":
         image = s1_after
@@ -139,31 +143,48 @@ def load_sample(
         image = np.concatenate([s2_before, s2_after], axis=2)
     else:
         image = np.concatenate([s2_before, s2_after, s1_before, s1_after], axis=2)
-        if s2_quality == "binary":
+        if s2_quality != "none":
+            quality = degradation.quality
+            if s2_quality == "mislocalized":
+                quality = mislocalize_quality_channels(quality)
             image = np.concatenate(
-                [image, s2_quality_channels(s2_before, s2_after, degrade_s2)],
+                [image, quality],
                 axis=2,
             )
 
     return image.astype(np.float32), read_mask(sample.s2_mask)
 
 
-def s2_quality_channels(
-    before: np.ndarray,
-    after: np.ndarray,
-    mode: str,
+@dataclass(frozen=True)
+class S2Degradation:
+    before: np.ndarray
+    after: np.ndarray
+    quality: np.ndarray
+
+
+def _quality_channels(
+    height: int,
+    width: int,
+    before_unavailable: np.ndarray | None = None,
+    after_unavailable: np.ndarray | None = None,
 ) -> np.ndarray:
-    h, w, _ = before.shape
-    before_quality = np.ones((h, w, 1), dtype=np.float32)
-    after_quality = np.ones((h, w, 1), dtype=np.float32)
-    if mode == "zero_all":
-        before_quality.fill(0.0)
-        after_quality.fill(0.0)
-    elif mode in {"zero_after", "noise_after"}:
-        after_quality.fill(0.0)
-    elif mode == "patch_after" or mode.startswith("cloud_after_"):
-        after_quality = (after.sum(axis=2, keepdims=True) > 0.0).astype(np.float32)
+    before_quality = np.ones((height, width, 1), dtype=np.float32)
+    after_quality = np.ones((height, width, 1), dtype=np.float32)
+    if before_unavailable is not None:
+        before_quality[before_unavailable, 0] = 0.0
+    if after_unavailable is not None:
+        after_quality[after_unavailable, 0] = 0.0
     return np.concatenate([before_quality, after_quality], axis=2)
+
+
+def mislocalize_quality_channels(quality: np.ndarray) -> np.ndarray:
+    """Shift spatial quality maps while preserving their unavailable-pixel counts."""
+    height, width, _ = quality.shape
+    return np.roll(
+        quality,
+        shift=(max(1, height // 4), max(1, width // 4)),
+        axis=(0, 1),
+    )
 
 
 def degrade_s2_pair(
@@ -172,26 +193,61 @@ def degrade_s2_pair(
     mode: str,
     rng: np.random.Generator,
 ) -> tuple[np.ndarray, np.ndarray]:
+    degradation = degrade_s2_pair_with_quality(before, after, mode, rng)
+    return degradation.before, degradation.after
+
+
+def degrade_s2_pair_with_quality(
+    before: np.ndarray,
+    after: np.ndarray,
+    mode: str,
+    rng: np.random.Generator,
+) -> S2Degradation:
+    height, width, _ = before.shape
+    no_unavailable = np.zeros((height, width), dtype=bool)
     if mode == "none":
-        return before, after
+        return S2Degradation(before, after, _quality_channels(height, width))
     if mode == "zero_all":
-        return np.zeros_like(before), np.zeros_like(after)
+        return S2Degradation(
+            np.zeros_like(before),
+            np.zeros_like(after),
+            _quality_channels(height, width, ~no_unavailable, ~no_unavailable),
+        )
     if mode == "zero_after":
-        return before, np.zeros_like(after)
+        return S2Degradation(
+            before,
+            np.zeros_like(after),
+            _quality_channels(height, width, after_unavailable=~no_unavailable),
+        )
     if mode == "noise_after":
-        return before, rng.random(after.shape, dtype=np.float32)
+        return S2Degradation(
+            before,
+            rng.random(after.shape, dtype=np.float32),
+            _quality_channels(height, width, after_unavailable=~no_unavailable),
+        )
     if mode == "patch_after":
         degraded = after.copy()
         h, w, _ = degraded.shape
+        unavailable = np.zeros((h, w), dtype=bool)
         patch = max(16, min(h, w) // 4)
         for _ in range(8):
             y = int(rng.integers(0, h - patch + 1))
             x = int(rng.integers(0, w - patch + 1))
             degraded[y : y + patch, x : x + patch, :] = 0.0
-        return before, degraded
+            unavailable[y : y + patch, x : x + patch] = True
+        return S2Degradation(
+            before,
+            degraded,
+            _quality_channels(height, width, after_unavailable=unavailable),
+        )
     if mode.startswith("cloud_after_"):
         fraction = _parse_cloud_fraction(mode)
-        return before, apply_cloud_like_mask(after, fraction, rng)
+        degraded, unavailable = apply_cloud_like_mask_with_mask(after, fraction, rng)
+        return S2Degradation(
+            before,
+            degraded,
+            _quality_channels(height, width, after_unavailable=unavailable),
+        )
     raise ValueError(
         "Unknown S2 degradation mode "
         f"{mode!r}; choose none, zero_all, zero_after, noise_after, patch_after, "
@@ -216,6 +272,15 @@ def apply_cloud_like_mask(
     target_fraction: float,
     rng: np.random.Generator,
 ) -> np.ndarray:
+    degraded, _ = apply_cloud_like_mask_with_mask(image, target_fraction, rng)
+    return degraded
+
+
+def apply_cloud_like_mask_with_mask(
+    image: np.ndarray,
+    target_fraction: float,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray]:
     degraded = image.copy()
     h, w, _ = degraded.shape
     mask = np.zeros((h, w), dtype=bool)
@@ -232,14 +297,12 @@ def apply_cloud_like_mask(
         x0 = max(0, cx - radius_x)
         x1 = min(w, cx + radius_x + 1)
         yy, xx = np.ogrid[y0:y1, x0:x1]
-        blob = (
-            ((yy - cy) / max(radius_y, 1)) ** 2
-            + ((xx - cx) / max(radius_x, 1)) ** 2
-            <= 1.0
-        )
+        blob = ((yy - cy) / max(radius_y, 1)) ** 2 + (
+            (xx - cx) / max(radius_x, 1)
+        ) ** 2 <= 1.0
         mask[y0:y1, x0:x1] |= blob
     degraded[mask, :] = 0.0
-    return degraded
+    return degraded, mask
 
 
 def summarize_samples(samples: Iterable[OmbriaSample]) -> dict[str, float]:

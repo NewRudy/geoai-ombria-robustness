@@ -6,9 +6,12 @@ seeds:
   - 7
   - 13
   - 21
+  - 29
+  - 37
 variants:
   - multimodal
   - s1_bitemporal
+  - s2_bitemporal
 train_degradation_modes:
   clean: none
   light: modality_dropout_light
@@ -20,3 +23,4 @@ test_degradation_modes:
   - zero_after
   - zero_all
 checkpoint_rule: validation_best_iou
+checkpoint_sensitivity_rule: mean_iou_none_cloud_after_50_zero_after
