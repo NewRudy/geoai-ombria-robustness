@@ -17,11 +17,13 @@ PATTERNS = (
     "runs/*/config.json",
     "runs/*/splits.json",
     "runs/*/metrics.csv",
+    "runs/*/checkpoint_selection.json",
     "runtime_manifest.json",
     "experiment_manifest.json",
     "environment_freeze.txt",
     "run.log",
     "checkpoint_manifest.json",
+    "split_near_duplicate_audit.json",
 )
 
 RUN_DIR_TEMPLATES = {
@@ -30,6 +32,8 @@ RUN_DIR_TEMPLATES = {
     "matched_control": "multimodal_none_train-quality_matched_light_seed{seed}",
     "matched_quality": "multimodal_quality-binary_none_train-quality_matched_light_seed{seed}",
     "s1_reference": "s1_bitemporal_none_seed{seed}",
+    "s2_reference": "s2_bitemporal_none_seed{seed}",
+    "mislocalized_quality": "multimodal_quality-mislocalized_none_train-quality_matched_light_seed{seed}",
 }
 
 
@@ -37,7 +41,19 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--include-checkpoints",
+        action="store_true",
+        help="Include the exact clean- and robust-selected weights in the archive.",
+    )
     return parser.parse_args()
+
+
+def checkpoint_path(run_dir: Path, policy: str) -> Path:
+    candidate = run_dir / f"best_{policy}.pt"
+    if policy == "clean" and not candidate.exists():
+        return run_dir / "best_model.pt"
+    return candidate
 
 
 def sha256(path: Path) -> str:
@@ -54,28 +70,41 @@ def main() -> None:
     experiment = json.loads((root / "experiment_manifest.json").read_text())
     seeds = experiment["model_seeds"]
     routes = experiment["routes"]
+    policies = experiment.get("checkpoint_policies", ["clean"])
     modes = experiment["evaluation_modes"]
     expected_runs = len(seeds) * len(routes)
-    expected_evaluations = expected_runs * len(modes)
-    if set(routes) != set(RUN_DIR_TEMPLATES):
+    expected_evaluations = expected_runs * len(policies) * len(modes)
+    if not set(routes).issubset(RUN_DIR_TEMPLATES):
         raise RuntimeError(f"Unknown confirmatory route set: {routes}")
-    checkpoint_by_route_seed = {
-        (route, int(seed)): root
-        / "runs"
-        / RUN_DIR_TEMPLATES[route].format(seed=seed)
-        / "best_model.pt"
+    run_dir_by_route_seed = {
+        (route, int(seed)): root / "runs" / RUN_DIR_TEMPLATES[route].format(seed=seed)
         for route in routes
         for seed in seeds
     }
-    expected_checkpoints = set(checkpoint_by_route_seed.values())
-    actual_checkpoints = set(root.glob("runs/*/best_model.pt"))
+    checkpoint_by_route_seed_policy = {
+        (route, int(seed), policy): checkpoint_path(
+            run_dir_by_route_seed[(route, int(seed))], policy
+        )
+        for route in routes
+        for seed in seeds
+        for policy in policies
+    }
+    expected_checkpoints = set(checkpoint_by_route_seed_policy.values())
+    actual_checkpoints = set()
+    for policy in policies:
+        actual_checkpoints.update(root.glob(f"runs/*/best_{policy}.pt"))
+    if policies == ["clean"] and not actual_checkpoints:
+        actual_checkpoints = set(root.glob("runs/*/best_model.pt"))
     checkpoints = sorted(expected_checkpoints)
 
     checks = {
         "training_configs": (len(list(root.glob("runs/*/config.json"))), expected_runs),
         "training_splits": (len(list(root.glob("runs/*/splits.json"))), expected_runs),
         "training_metrics": (len(list(root.glob("runs/*/metrics.csv"))), expected_runs),
-        "validation_selected_checkpoints": (len(checkpoints), expected_runs),
+        "validation_selected_checkpoints": (
+            len(checkpoints),
+            expected_runs * len(policies),
+        ),
         "evaluation_configs": (
             len(list(root.glob("evaluations/**/evaluation_config.json"))),
             expected_evaluations,
@@ -106,15 +135,19 @@ def main() -> None:
         )
 
     checkpoint_hashes = {path: sha256(path) for path in checkpoints}
-    evaluation_keys: list[tuple[str, int, str]] = []
+    evaluation_keys: list[tuple[str, int, str, str]] = []
     evaluation_counts = {path: 0 for path in checkpoints}
     evaluation_errors: list[str] = []
     for config_path in sorted(root.glob("evaluations/**/evaluation_config.json")):
         config = json.loads(config_path.read_text())
-        key = (str(config["route"]), int(config["model_seed"]))
+        key = (
+            str(config["route"]),
+            int(config["model_seed"]),
+            str(config.get("checkpoint_policy", "clean")),
+        )
         mode = str(config["degrade_s2"])
-        evaluation_keys.append((key[0], key[1], mode))
-        expected_checkpoint = checkpoint_by_route_seed.get(key)
+        evaluation_keys.append((key[0], key[1], key[2], mode))
+        expected_checkpoint = checkpoint_by_route_seed_policy.get(key)
         if expected_checkpoint is None:
             evaluation_errors.append(
                 f"unknown route/seed in {config_path.relative_to(root)}"
@@ -141,7 +174,11 @@ def main() -> None:
             )
 
     expected_evaluation_keys = {
-        (route, int(seed), mode) for route in routes for seed in seeds for mode in modes
+        (route, int(seed), policy, mode)
+        for route in routes
+        for seed in seeds
+        for policy in policies
+        for mode in modes
     }
     if set(evaluation_keys) != expected_evaluation_keys or len(evaluation_keys) != len(
         expected_evaluation_keys
@@ -163,8 +200,9 @@ def main() -> None:
     checkpoint_manifest_path.write_text(
         json.dumps(
             {
-                "schema": "geoai-ombria-confirmatory-checkpoints-v1",
-                "note": "Weights are excluded from the returned archive; these hashes identify the validation-selected checkpoints used for evaluation.",
+                "schema": "geoai-ombria-confirmatory-checkpoints-v2",
+                "weights_included": args.include_checkpoints,
+                "note": "Hashes identify every validation-selected checkpoint used for evaluation. The v0.2 Full artifact includes the exact weights when include-checkpoints is enabled.",
                 "checkpoints": [
                     {
                         "path": str(path.relative_to(root)),
@@ -183,10 +221,12 @@ def main() -> None:
     files: list[Path] = []
     for pattern in PATTERNS:
         files.extend(path for path in root.glob(pattern) if path.is_file())
+    if args.include_checkpoints:
+        files.extend(checkpoints)
     files = sorted(set(files))
     project_root = root.parents[1]
     manifest = {
-        "schema": "geoai-ombria-confirmatory-artifact-v1",
+        "schema": "geoai-ombria-confirmatory-artifact-v2",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "completeness_checks": checks,
         "file_count_excluding_manifest": len(files),

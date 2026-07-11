@@ -14,6 +14,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.append(str(Path(__file__).resolve().parent))
 
 from geoai_ombria_robustness.ombria import (  # noqa: E402
+    S2_QUALITY_MODES,
     OmbriaSample,
     load_sample,
     read_mask,
@@ -41,7 +42,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--route", required=True)
     parser.add_argument("--variant", required=True)
-    parser.add_argument("--s2-quality", choices=("none", "binary"), default="none")
+    parser.add_argument("--s2-quality", choices=S2_QUALITY_MODES, default="none")
+    parser.add_argument(
+        "--checkpoint-policy",
+        choices=("clean", "robust"),
+        default="clean",
+    )
     parser.add_argument("--degrade-s2", default="none")
     parser.add_argument("--model-seed", type=int, required=True)
     parser.add_argument("--perturb-seed", type=int, default=20260710)
@@ -217,6 +223,7 @@ def evaluate_event(
                         "s2_quality": args.s2_quality,
                         "degrade_s2": args.degrade_s2,
                         "model_seed": args.model_seed,
+                        "checkpoint_policy": args.checkpoint_policy,
                         "perturb_seed": args.perturb_seed,
                         "repetition": repetition,
                         "event": event,
@@ -292,6 +299,7 @@ def main() -> None:
                     "s2_quality": args.s2_quality,
                     "degrade_s2": args.degrade_s2,
                     "model_seed": args.model_seed,
+                    "checkpoint_policy": args.checkpoint_policy,
                     "perturb_seed": args.perturb_seed,
                     "repetition": repetition,
                     "event": event,
@@ -310,6 +318,7 @@ def main() -> None:
                 "s2_quality": args.s2_quality,
                 "degrade_s2": args.degrade_s2,
                 "model_seed": args.model_seed,
+                "checkpoint_policy": args.checkpoint_policy,
                 "perturb_seed": args.perturb_seed,
                 "repetition": repetition,
                 "event": "ALL",
@@ -327,7 +336,9 @@ def main() -> None:
         (args.out_dir / "per_chip_metrics.csv", chip_rows),
     ]:
         with path.open("w", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+            writer = csv.DictWriter(
+                handle, fieldnames=list(rows[0]), lineterminator="\n"
+            )
             writer.writeheader()
             writer.writerows(rows)
     print(json.dumps(summary_rows[-1], sort_keys=True))

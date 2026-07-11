@@ -26,17 +26,21 @@ def read_rows(root: Path) -> list[dict[str, str]]:
     return rows
 
 
-T_CRITICAL_975_DF2 = 4.302652729911275
+T_CRITICAL_975 = {
+    2: 4.302652729911275,
+    4: 2.7764451051977987,
+}
 
 
 def ci95(values: list[float]) -> float | None:
     if len(values) == 1:
         return None
-    if len(values) != 3:
+    degrees_freedom = len(values) - 1
+    if degrees_freedom not in T_CRITICAL_975:
         raise ValueError(
-            "The locked confirmatory interval is defined for exactly three model seeds"
+            "Run-level intervals support exactly three or five model seeds"
         )
-    return T_CRITICAL_975_DF2 * stdev(values) / math.sqrt(len(values))
+    return T_CRITICAL_975[degrees_freedom] * stdev(values) / math.sqrt(len(values))
 
 
 def format_mean_interval(center: float, half_width: float | None) -> str:
@@ -48,20 +52,28 @@ def format_mean_interval(center: float, half_width: float | None) -> str:
 def main() -> None:
     args = parse_args()
     rows = read_rows(args.evaluations_dir)
-    pooled_repetitions: dict[tuple[str, str, int], list[dict[str, str]]] = defaultdict(
-        list
+    pooled_repetitions: dict[tuple[str, str, str, int], list[dict[str, str]]] = (
+        defaultdict(list)
     )
     for row in rows:
         if row["event"] == "ALL":
             pooled_repetitions[
-                (row["route"], row["degrade_s2"], int(row["model_seed"]))
+                (
+                    row["route"],
+                    row.get("checkpoint_policy", "clean"),
+                    row["degrade_s2"],
+                    int(row["model_seed"]),
+                )
             ].append(row)
 
     seed_rows: list[dict[str, object]] = []
-    for (route, mode, model_seed), group in sorted(pooled_repetitions.items()):
+    for (route, checkpoint_policy, mode, model_seed), group in sorted(
+        pooled_repetitions.items()
+    ):
         seed_rows.append(
             {
                 "route": route,
+                "checkpoint_policy": checkpoint_policy,
                 "degrade_s2": mode,
                 "model_seed": model_seed,
                 "perturb_repetitions": len(group),
@@ -73,12 +85,18 @@ def main() -> None:
             }
         )
 
-    grouped: dict[tuple[str, str], list[dict[str, object]]] = defaultdict(list)
+    grouped: dict[tuple[str, str, str], list[dict[str, object]]] = defaultdict(list)
     for row in seed_rows:
-        grouped[(str(row["route"]), str(row["degrade_s2"]))].append(row)
+        grouped[
+            (
+                str(row["route"]),
+                str(row["checkpoint_policy"]),
+                str(row["degrade_s2"]),
+            )
+        ].append(row)
 
     summary: list[dict[str, object]] = []
-    for (route, mode), group in sorted(grouped.items()):
+    for (route, checkpoint_policy, mode), group in sorted(grouped.items()):
         ious = [float(row["iou"]) for row in group]
         f1s = [float(row["f1"]) for row in group]
         repetition_counts = {int(row["perturb_repetitions"]) for row in group}
@@ -90,6 +108,7 @@ def main() -> None:
         summary.append(
             {
                 "route": route,
+                "checkpoint_policy": checkpoint_policy,
                 "degrade_s2": mode,
                 "model_seeds": len(group),
                 "perturb_repetitions_per_seed": next(iter(repetition_counts)),
@@ -102,7 +121,9 @@ def main() -> None:
 
     args.out_csv.parent.mkdir(parents=True, exist_ok=True)
     with args.out_csv.open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(summary[0]))
+        writer = csv.DictWriter(
+            handle, fieldnames=list(summary[0]), lineterminator="\n"
+        )
         writer.writeheader()
         writer.writerows(summary)
 
@@ -112,6 +133,11 @@ def main() -> None:
             "The displayed interval is a two-sided 95% Student-t interval (df = 2) "
             "across three model seeds after averaging perturbation repetitions within each seed."
         )
+    elif seed_counts == {5}:
+        interval_note = (
+            "The displayed interval is a two-sided 95% Student-t interval (df = 4) "
+            "across five model seeds after averaging perturbation repetitions within each seed."
+        )
     elif seed_counts == {1}:
         interval_note = (
             "This Smoke run has one model seed, so run-level uncertainty is not estimable "
@@ -119,7 +145,7 @@ def main() -> None:
         )
     else:
         raise ValueError(
-            f"Expected one or three model seeds per route/state, found {seed_counts}"
+            f"Expected one, three, or five model seeds per route/state, found {seed_counts}"
         )
 
     lines = [
@@ -128,12 +154,12 @@ def main() -> None:
         "Metrics pool confusion counts across the four released 2021 event folders within each model-seed/perturbation repetition. "
         + interval_note,
         "",
-        "| Route | S2 state | Seeds | Perturbation repetitions/seed | IoU mean [run-level interval] | F1 mean [run-level interval] |",
-        "| --- | --- | ---: | ---: | ---: | ---: |",
+        "| Route | Checkpoint policy | S2 state | Seeds | Perturbation repetitions/seed | IoU mean [run-level interval] | F1 mean [run-level interval] |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: |",
     ]
     for row in summary:
         lines.append(
-            f"| {row['route']} | {row['degrade_s2']} | {row['model_seeds']} | "
+            f"| {row['route']} | {row['checkpoint_policy']} | {row['degrade_s2']} | {row['model_seeds']} | "
             f"{row['perturb_repetitions_per_seed']} | "
             f"{format_mean_interval(float(row['iou_mean']), row['iou_ci95_run_level'])} | "
             f"{format_mean_interval(float(row['f1_mean']), row['f1_ci95_run_level'])} |"

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import random
+import shutil
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -14,6 +16,7 @@ import numpy as np
 sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 
 from geoai_ombria_robustness.ombria import (  # noqa: E402
+    S2_QUALITY_MODES,
     VARIANTS,
     OmbriaSample,
     collect_ombria_samples,
@@ -21,6 +24,20 @@ from geoai_ombria_robustness.ombria import (  # noqa: E402
     summarize_samples,
     variant_channels,
 )
+
+
+def stable_stream_seed(base_seed: int, epoch: int, chip_id: str, stream: str) -> int:
+    """Derive a call-order-independent uint32 seed for one sample and stream."""
+    token = f"{base_seed}:{epoch}:{chip_id}:{stream}".encode()
+    return int.from_bytes(hashlib.sha256(token).digest()[:4], "big")
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 TRAIN_S2_DEGRADATIONS = (
@@ -112,7 +129,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--train-degrade-s2", choices=TRAIN_S2_DEGRADATIONS, default="none"
     )
-    parser.add_argument("--s2-quality", choices=("none", "binary"), default="none")
+    parser.add_argument("--s2-quality", choices=S2_QUALITY_MODES, default="none")
     parser.add_argument("--out-dir", type=Path, default=Path("results/runs/ombria"))
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=8)
@@ -121,6 +138,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--val-fraction", type=float, default=0.15)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument(
+        "--loader-seed",
+        type=int,
+        default=None,
+        help="Independent minibatch-order seed; defaults to model seed + 200000.",
+    )
+    parser.add_argument(
+        "--corruption-seed",
+        type=int,
+        default=None,
+        help="Independent training-corruption seed; defaults to model seed + 300000.",
+    )
     parser.add_argument(
         "--split-seed",
         type=int,
@@ -139,6 +168,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--anchor-weight", type=float, default=0.35)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--no-checkpoint", action="store_true")
+    parser.add_argument(
+        "--robust-val-modes",
+        nargs="+",
+        default=("none", "cloud_after_50", "zero_after"),
+        help="Predefined validation states averaged for best_robust.pt.",
+    )
     return parser.parse_args()
 
 
@@ -152,28 +187,33 @@ class OmbriaTorchDataset:
         s2_quality: str = "none",
         return_anchor: bool = False,
         train_degrade_s2: str = "none",
+        epoch_dependent: bool = False,
     ) -> None:
         import torch
         from torch.utils.data import Dataset
 
         class _Dataset(Dataset):
             def __init__(self_inner) -> None:
-                self_inner.calls = 0
+                self_inner.epoch = 0
+
+            def set_epoch(self_inner, epoch: int) -> None:
+                self_inner.epoch = int(epoch)
 
             def __len__(self_inner) -> int:
                 return len(samples)
 
             def __getitem__(self_inner, idx: int):
+                sample = samples[idx]
+                epoch = self_inner.epoch if epoch_dependent else 0
+                rng = np.random.default_rng(
+                    stable_stream_seed(seed, epoch, sample.chip_id, "s2_corruption")
+                )
                 if degrade_s2 in TRAIN_S2_DEGRADATIONS and degrade_s2 != "none":
-                    call_id = self_inner.calls
-                    self_inner.calls += 1
-                    rng = np.random.default_rng(seed + idx + call_id * 1_000_003)
                     sample_degrade_s2 = choose_train_degrade_s2(degrade_s2, rng)
                 else:
-                    rng = np.random.default_rng(seed + idx)
                     sample_degrade_s2 = degrade_s2
                 image, mask = load_sample(
-                    samples[idx],
+                    sample,
                     variant,
                     sample_degrade_s2,
                     rng,
@@ -183,10 +223,14 @@ class OmbriaTorchDataset:
                 y = torch.from_numpy(mask[None, :, :])
                 if return_anchor:
                     anchor_image, _ = load_sample(
-                        samples[idx],
+                        sample,
                         "s1_bitemporal",
                         "none",
-                        rng,
+                        np.random.default_rng(
+                            stable_stream_seed(
+                                seed, epoch, sample.chip_id, "anchor_input"
+                            )
+                        ),
                         s2_quality="none",
                     )
                     anchor_x = torch.from_numpy(np.moveaxis(anchor_image, 2, 0))
@@ -328,9 +372,19 @@ def evaluate(model, loader, device) -> dict[str, float]:
 
 def main() -> None:
     args = parse_args()
+    if args.loader_seed is None:
+        args.loader_seed = args.seed + 200_000
+    if args.corruption_seed is None:
+        args.corruption_seed = args.seed + 300_000
+    if not args.robust_val_modes or "none" not in args.robust_val_modes:
+        raise ValueError("--robust-val-modes must include 'none'")
     if args.train_degrade_s2 != "none" and args.variant != "multimodal":
-        raise ValueError("--train-degrade-s2 is only supported for --variant multimodal")
-    if args.anchor_checkpoint is not None and not is_sar_anchor_mode(args.train_degrade_s2):
+        raise ValueError(
+            "--train-degrade-s2 is only supported for --variant multimodal"
+        )
+    if args.anchor_checkpoint is not None and not is_sar_anchor_mode(
+        args.train_degrade_s2
+    ):
         raise ValueError("--anchor-checkpoint is only used with SAR-anchor train modes")
     if (
         is_sar_anchor_mode(args.train_degrade_s2)
@@ -440,31 +494,52 @@ def main() -> None:
         train_samples,
         args.variant,
         args.train_degrade_s2,
-        args.seed,
+        args.corruption_seed,
         s2_quality=args.s2_quality,
         return_anchor=is_sar_anchor_mode(args.train_degrade_s2),
         train_degrade_s2=args.train_degrade_s2,
+        epoch_dependent=True,
     ).dataset
-    val_ds = OmbriaTorchDataset(
-        val_samples,
-        args.variant,
-        "none",
-        args.seed,
-        s2_quality=args.s2_quality,
-    ).dataset
+    val_datasets = {
+        mode: OmbriaTorchDataset(
+            val_samples,
+            args.variant,
+            mode,
+            args.eval_perturb_seed,
+            s2_quality=args.s2_quality,
+        ).dataset
+        for mode in args.robust_val_modes
+    }
+
+    loader_generator = torch.Generator()
+    loader_generator.manual_seed(args.loader_seed)
 
     train_loader = DataLoader(
-        train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
+        train_ds,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.num_workers,
+        generator=loader_generator,
     )
-    val_loader = DataLoader(
-        val_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
-    )
+    val_loaders = {
+        mode: DataLoader(
+            dataset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.num_workers,
+        )
+        for mode, dataset in val_datasets.items()
+    }
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     anchor_model = None
     if is_sar_anchor_mode(args.train_degrade_s2):
-        anchor_model = build_model(variant_channels("s1_bitemporal"), args.base_channels).to(device)
-        anchor_model.load_state_dict(torch.load(args.anchor_checkpoint, map_location=device))
+        anchor_model = build_model(
+            variant_channels("s1_bitemporal"), args.base_channels
+        ).to(device)
+        anchor_model.load_state_dict(
+            torch.load(args.anchor_checkpoint, map_location=device)
+        )
         anchor_model.eval()
         for param in anchor_model.parameters():
             param.requires_grad_(False)
@@ -482,7 +557,10 @@ def main() -> None:
         )
 
     metrics_path = run_dir / "metrics.csv"
-    best_val_iou = -1.0
+    best_clean_iou = -1.0
+    best_robust_iou = -1.0
+    best_clean_epoch = None
+    best_robust_epoch = None
     start = time()
     with metrics_path.open("w", newline="") as f:
         fieldnames = [
@@ -494,11 +572,14 @@ def main() -> None:
             "val_precision",
             "val_recall",
             "val_accuracy",
+            "robust_val_iou_mean",
+            *[f"val_{mode}_iou" for mode in args.robust_val_modes if mode != "none"],
         ]
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
 
         for epoch in range(1, args.epochs + 1):
+            train_ds.set_epoch(epoch)
             model.train()
             train_loss = 0.0
             train_batches = 0
@@ -526,13 +607,22 @@ def main() -> None:
                         anchor_prob,
                         reduction="none",
                     )
-                    loss = loss + args.anchor_weight * (anchor_loss * anchor_weight).mean()
+                    loss = (
+                        loss + args.anchor_weight * (anchor_loss * anchor_weight).mean()
+                    )
                 loss.backward()
                 optimizer.step()
                 train_loss += float(loss.item())
                 train_batches += 1
 
-            val = evaluate(model, val_loader, device)
+            validation = {
+                mode: evaluate(model, loader, device)
+                for mode, loader in val_loaders.items()
+            }
+            val = validation["none"]
+            robust_val_iou = float(
+                np.mean([metrics["iou"] for metrics in validation.values()])
+            )
             row = {
                 "epoch": epoch,
                 "train_loss": train_loss / max(train_batches, 1),
@@ -542,16 +632,51 @@ def main() -> None:
                 "val_precision": val["precision"],
                 "val_recall": val["recall"],
                 "val_accuracy": val["accuracy"],
+                "robust_val_iou_mean": robust_val_iou,
+                **{
+                    f"val_{mode}_iou": metrics["iou"]
+                    for mode, metrics in validation.items()
+                    if mode != "none"
+                },
             }
             writer.writerow(row)
             f.flush()
             print(json.dumps(row, sort_keys=True))
 
-            if val["iou"] > best_val_iou and not args.no_checkpoint:
-                best_val_iou = val["iou"]
-                torch.save(model.state_dict(), run_dir / "best_model.pt")
+            if val["iou"] > best_clean_iou and not args.no_checkpoint:
+                best_clean_iou = val["iou"]
+                best_clean_epoch = epoch
+                torch.save(model.state_dict(), run_dir / "best_clean.pt")
+            if robust_val_iou > best_robust_iou and not args.no_checkpoint:
+                best_robust_iou = robust_val_iou
+                best_robust_epoch = epoch
+                torch.save(model.state_dict(), run_dir / "best_robust.pt")
 
     elapsed = time() - start
+    if not args.no_checkpoint:
+        clean_checkpoint = run_dir / "best_clean.pt"
+        robust_checkpoint = run_dir / "best_robust.pt"
+        shutil.copyfile(clean_checkpoint, run_dir / "best_model.pt")
+        (run_dir / "checkpoint_selection.json").write_text(
+            json.dumps(
+                {
+                    "schema": "geoai-ombria-checkpoint-selection-v2",
+                    "primary": "best_clean.pt",
+                    "primary_rule": "maximum clean validation IoU",
+                    "robust_sensitivity": "best_robust.pt",
+                    "robust_rule": "maximum mean validation IoU across predefined states",
+                    "robust_validation_modes": list(args.robust_val_modes),
+                    "best_clean_epoch": best_clean_epoch,
+                    "best_clean_iou": best_clean_iou,
+                    "best_clean_sha256": file_sha256(clean_checkpoint),
+                    "best_robust_epoch": best_robust_epoch,
+                    "best_robust_iou_mean": best_robust_iou,
+                    "best_robust_sha256": file_sha256(robust_checkpoint),
+                },
+                indent=2,
+            )
+            + "\n"
+        )
     print(f"finished run_dir={run_dir} elapsed_seconds={elapsed:.1f}")
 
 

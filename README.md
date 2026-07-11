@@ -1,88 +1,81 @@
-# OMBRIA Sentinel-1/Sentinel-2 Robustness Audit
+# OMBRIA Sentinel-1/Sentinel-2 Sensor-State Audit
 
 Reproducible code for the manuscript:
 
-> Auditing the Robustness of Multitemporal Sentinel-1/Sentinel-2 Fusion for Flood Mapping under Controlled Optical Degradation
+> Controlled Sensor-State Stress Testing of Multitemporal Sentinel-1/Sentinel-2 Flood Mapping: An Event-Held-Out OMBRIA Audit
 
-The project audits how multitemporal Sentinel-1/Sentinel-2 flood segmentation behaves when the Sentinel-2 stream is clean, synthetically occluded, noisy, partially missing, or completely absent. It is an OMBRIA-only controlled robustness study, not evidence of operational deployment, observed-cloud robustness, state-of-the-art performance, or universal generalization.
+The project tests how multitemporal Sentinel-1/Sentinel-2 flood segmentation changes when the Sentinel-2 stream is clean, synthetically occluded, noisy, or zero-filled to simulate absence. It is an OMBRIA-only controlled stress test, not evidence of observed-cloud robustness, operational deployment, state-of-the-art performance, or universal generalization.
 
-## Repository scope
+## Released v0.1.5 evidence
 
-Included:
+The corrected v0.1.5 evidence archive contains the five-route, three-run, eight-state evaluation over 150 chips from four released 2021 OMBRIA events. The statistical correction recomputes `df = 2` Student-t intervals from the original raw confusion counts; model means are unchanged and no retraining was performed.
 
-- OMBRIA data loading and controlled Sentinel-2 stress generation;
-- compact U-Net training and validation-only checkpoint selection;
-- exploratory public-split evaluation scripts;
-- locked 2021 event-held-out confirmation scripts;
-- global and per-chip metric export;
-- matched quality-map ablation;
-- high-resolution qualitative panels with an S1-only reference;
-- Kaggle smoke and full-run notebooks.
+- [v0.1.5-confirmatory release](https://github.com/NewRudy/geoai-ombria-robustness/releases/tag/v0.1.5-confirmatory)
+- Evidence archive SHA-256: `dc0e1bf1c27cca1dcb208bc19afa8bff68152347dc4a8958deace128eb69ca6f`
 
-Excluded:
+The historical v0.1.4 artifact did not retain model weights. That limitation is explicit in the release manifest.
 
-- raw OMBRIA data;
-- model checkpoints and training caches;
-- credentials and Kaggle tokens;
-- manuscript drafts and private submission metadata.
+## v0.2 protocol-frozen follow-up
 
-## Current exploratory evidence
+v0.2 repairs the strongest design and traceability limitations before final manuscript freeze:
 
-The manuscript's current public-split matrix reports three seed-controlled runs. Selected mean IoU values are:
+- seven routes: clean multimodal, light degradation, matched-distribution control, known-quality maps, same-width mislocalized-quality control, S1-only, and S2-only;
+- five model repeats (`7`, `13`, `21`, `29`, `37`);
+- independent model, minibatch-order, training-corruption, and evaluation-perturbation random streams;
+- training corruption fixed by epoch, chip ID, and corruption seed rather than dataset call order;
+- exact applied corruption masks for quality channels;
+- primary clean-selected and prespecified robustness-selected checkpoints;
+- exact checkpoint weights and hashes in the Full artifact;
+- train/validation exact and thumbnail-similarity duplicate audit;
+- selected-chip probability arrays and FP/FN error-map panels.
 
-| Route and state | IoU |
-| --- | ---: |
-| Clean multimodal, clean input | 0.6821 |
-| Light degradation training, clean input | 0.6521 |
-| Clean multimodal, all S2 missing | 0.0447 |
-| Light degradation training, all S2 missing | 0.3689 |
-| S1-only reference | 0.5071 |
+The same four outcome events have already been inspected. v0.2 is therefore a follow-up/sensitivity analysis, not a new independent confirmation. See [`docs/SENSOR_STATE_V2_PROTOCOL.md`](docs/SENSOR_STATE_V2_PROTOCOL.md).
 
-These results are exploratory because the public test matrix informed route comparison during development. The separately released 2021 event folders are reserved for the locked confirmation described below.
+## Controlled Sentinel-2 states
 
-## Kaggle: click-to-run workflow
+- `none`: unmodified input;
+- `patch_after`: eight zero-valued post-event patches;
+- `cloud_after_30`, `cloud_after_50`, `cloud_after_70`: synthetic opaque elliptical occlusion;
+- `noise_after`: post-event Sentinel-2 replaced with uniform noise;
+- `zero_after`: post-event Sentinel-2 set to zero;
+- `zero_all`: both Sentinel-2 timestamps set to zero.
 
-Two notebooks are provided:
+Cloud-like occlusion is synthetic. Zero filling simulates input absence without removing network channels.
 
-- [`notebooks/kaggle_confirmatory_smoke.ipynb`](notebooks/kaggle_confirmatory_smoke.ipynb): one model seed and two epochs; checks the complete runtime path but is not scientific evidence.
-- [`notebooks/kaggle_confirmatory_full.ipynb`](notebooks/kaggle_confirmatory_full.ipynb): three model seeds and 25 epochs; run only after the smoke gate succeeds.
+## Kaggle click-to-run workflow
 
-In Kaggle, enable a GPU and Internet access, import the appropriate notebook from this repository, and choose **Run All**. Each notebook clones the immutable `v0.1.5-confirmatory` tag, so the executed code does not drift with the default branch. The notebook first returns to `/kaggle/working`, making a repeated **Run All** safe even when the previous run left the kernel inside the cloned directory. It also detects whether the installed PyTorch wheel contains the active GPU architecture; on P100 (`sm_60`) it automatically installs the official PyTorch 2.7.1 CUDA 12.6 build together with its pinned CUDA runtime dependencies before running a real CUDA convolution gate. A partially installed 2.7.1 stack from an interrupted or older notebook run is repaired automatically.
+The v0.1.5 smoke and Full notebooks remain historical entrypoints. The v0.2 entrypoints are `notebooks/kaggle_sensor_state_v2_smoke.ipynb` and `notebooks/kaggle_sensor_state_v2_full.ipynb`; both run `scripts/run_sensor_state_v2_matrix.sh` from a pinned Git tag. In Kaggle, enable a GPU and Internet access, import the appropriate notebook, and choose **Run All**.
 
-The returned archive is:
+The runner supports:
 
-```text
-results/ombria_2021_confirmatory_artifacts.zip
+```bash
+MODE=smoke EPOCHS=2 bash scripts/run_sensor_state_v2_matrix.sh
+MODE=full EPOCHS=25 bash scripts/run_sensor_state_v2_matrix.sh
 ```
 
-The archive retains per-epoch training metrics, runtime and experiment manifests, a package hash manifest, validation-selected checkpoint hashes linked to every evaluation configuration, the complete console log, and an environment freeze alongside the evaluation tables and figures. Model weights remain excluded to keep the handoff manageable. Run-level 95% intervals use the Student-t critical value for the three locked model seeds (df = 2) and describe model-training variation under the fixed split and perturbation panel. A one-seed Smoke run reports the interval as not estimable rather than as zero.
+Smoke uses one seed and the clean-selected checkpoint policy. Full uses five seeds and both clean- and robustness-selected policies. The returned archive is:
 
-See [`docs/KAGGLE.md`](docs/KAGGLE.md) for the short operator guide.
+```text
+results/ombria_sensor_state_v2_artifacts.zip
+```
 
-## Locked 2021 event-held-out confirmation
+Kaggle P100 uses Pascal `sm_60`. The notebook reuses the repository's CUDA compatibility gate, which installs the official PyTorch 2.7.1 CUDA 12.6 stack only when the active wheel cannot execute a real CUDA convolution.
 
-Training uses only the released `OmbriaS1/train` and `OmbriaS2/train` folders. Confirmation uses the four separately released event folders under `2021/`:
+## Data boundary
 
-| Event folder | Matched chips |
+Training uses matched chips under `OmbriaS1/train` and `OmbriaS2/train`. Evaluation uses:
+
+| Event | Chips |
 | --- | ---: |
-| ALBANIA | 22 |
-| FRANCE | 88 |
-| GUYANA | 30 |
-| TIMOR | 10 |
+| Albania | 22 |
+| France | 88 |
+| Guyana | 30 |
+| Timor | 10 |
 | **Total** | **150** |
 
-The locked protocol uses:
+The public PNG release does not include a chip-to-scene or geospatial grouping manifest. The validation split remains chip-level; the near-duplicate audit does not substitute for spatial grouping.
 
-- split seed `20260710`, independent of model seeds `7`, `13`, and `21`;
-- perturbation seed `20260710` and three fixed realizations for stochastic states;
-- validation IoU only for checkpoint selection;
-- globally accumulated TP/FP/FN/TN metrics plus per-chip rows;
-- identical degradation schedules with and without binary quality maps;
-- a bitemporal S1-only reference for every tested Sentinel-2 state.
-
-Read [`docs/CONFIRMATORY_PROTOCOL.md`](docs/CONFIRMATORY_PROTOCOL.md) before changing any locked parameter.
-
-## Local execution
+## Local setup and checks
 
 Python 3.10 or newer is recommended.
 
@@ -91,45 +84,26 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-```
-
-Smoke gate:
-
-```bash
-MODE=smoke EPOCHS=2 bash scripts/run_confirmatory_event_matrix.sh
-```
-
-Full locked run:
-
-```bash
-MODE=full EPOCHS=25 bash scripts/run_confirmatory_event_matrix.sh
+python -m unittest discover -s tests -v
 ```
 
 The runner fetches OMBRIA at commit `38a490355f76da8ce27ed051138f03f3492a6e46` and verifies the required train and 2021 event folders before starting.
 
-## Controlled Sentinel-2 states
+## Repository scope
 
-- `none`: unmodified input.
-- `patch_after`: eight zero-valued post-event patches.
-- `cloud_after_30`, `cloud_after_50`, `cloud_after_70`: synthetic zero-valued elliptical occlusion masks.
-- `noise_after`: post-event Sentinel-2 replaced with uniform random noise.
-- `zero_after`: post-event Sentinel-2 set to zero.
-- `zero_all`: both Sentinel-2 timestamps set to zero.
+Included:
 
-The cloud-like masks are synthetic occlusion and must not be relabeled as observed clouds, cloud shadows, or atmospheric-correction errors.
+- OMBRIA loading and controlled Sentinel-2 stress generation;
+- compact U-Net training and validation-only checkpoint selection;
+- global, per-event, and per-chip metric export;
+- quality-map and modality controls;
+- evidence packaging with checkpoint and file hashes;
+- Kaggle runtime compatibility checks.
 
-## Repository structure
+Excluded:
 
-```text
-configs/                         Configuration examples
-data/                            Placeholder only; raw data is not committed
-docs/                            Data, protocol, and reproducibility notes
-notebooks/                       Kaggle smoke and full-run entrypoints
-results/tables/                  Audited exploratory summary tables
-scripts/                         Training, evaluation, export, and runner scripts
-src/geoai_ombria_robustness/     Dataset and degradation utilities
-```
+- raw OMBRIA data;
+- credentials and access tokens;
+- private manuscript and submission metadata.
 
-## Citation and license
-
-Citation metadata is available in [`CITATION.cff`](CITATION.cff). Code is released under the MIT License. OMBRIA remains subject to the terms and citation requirements of its original repository and publication.
+Citation metadata is in [`CITATION.cff`](CITATION.cff). Code is MIT licensed. OMBRIA remains subject to its original terms and citation requirements.

@@ -18,6 +18,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split-seed", type=int, required=True)
     parser.add_argument("--perturb-seed", type=int, required=True)
     parser.add_argument("--eval-modes", nargs="+", required=True)
+    parser.add_argument(
+        "--routes",
+        nargs="+",
+        default=(
+            "clean",
+            "light",
+            "matched_control",
+            "matched_quality",
+            "s1_reference",
+        ),
+    )
+    parser.add_argument("--checkpoint-policies", nargs="+", default=("clean",))
     parser.add_argument("--ombria-commit", required=True)
     return parser.parse_args()
 
@@ -30,7 +42,7 @@ def git_output(command: list[str]) -> str | None:
 def main() -> None:
     args = parse_args()
     manifest = {
-        "schema": "geoai-ombria-confirmatory-experiment-v1",
+        "schema": "geoai-ombria-confirmatory-experiment-v2",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "mode": args.mode,
         "model_seeds": args.seeds,
@@ -40,19 +52,18 @@ def main() -> None:
         "split_seed": args.split_seed,
         "perturb_seed": args.perturb_seed,
         "evaluation_modes": args.eval_modes,
-        "routes": [
-            "clean",
-            "light",
-            "matched_control",
-            "matched_quality",
-            "s1_reference",
-        ],
+        "routes": args.routes,
+        "checkpoint_policies": args.checkpoint_policies,
         "ombria_commit": args.ombria_commit,
         "repository_commit": git_output(["git", "rev-parse", "HEAD"]),
         "repository_release": git_output(
             ["git", "describe", "--tags", "--exact-match"]
         ),
-        "checkpoint_selection": "maximum validation IoU; test events are never evaluated during training",
+        "checkpoint_selection": {
+            "clean": "maximum clean validation IoU",
+            "robust": "maximum mean validation IoU across clean, cloud_after_50, and zero_after",
+            "test_event_use": "test events are never evaluated during training or checkpoint selection",
+        },
         "metric_aggregation": "global confusion counts across all 2021 event pixels, with per-chip rows retained",
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)

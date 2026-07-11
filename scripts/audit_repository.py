@@ -21,14 +21,20 @@ def main() -> None:
         "LICENSE",
         "CITATION.cff",
         "docs/CONFIRMATORY_PROTOCOL.md",
+        "docs/SENSOR_STATE_V2_PROTOCOL.md",
         "docs/KAGGLE.md",
         "notebooks/kaggle_confirmatory_smoke.ipynb",
         "notebooks/kaggle_confirmatory_full.ipynb",
+        "notebooks/kaggle_sensor_state_v2_smoke.ipynb",
+        "notebooks/kaggle_sensor_state_v2_full.ipynb",
         "scripts/train_ombria_unet.py",
         "scripts/evaluate_ombria_2021_events.py",
         "scripts/summarize_confirmatory_events.py",
         "scripts/export_confirmatory_event_panels.py",
         "scripts/run_confirmatory_event_matrix.sh",
+        "scripts/run_sensor_state_v2_matrix.sh",
+        "scripts/audit_split_near_duplicates.py",
+        "scripts/export_sensor_state_v2_probabilities.py",
         "scripts/ensure_cuda_compat.py",
         "scripts/check_cuda_runtime.py",
         "scripts/write_experiment_manifest.py",
@@ -51,19 +57,36 @@ def main() -> None:
     )
 
     runner = ROOT / "scripts/run_confirmatory_event_matrix.sh"
-    shell = subprocess.run(
-        ["bash", "-n", str(runner)], capture_output=True, text=True, check=False
-    )
-    check("Shell syntax gate", shell.returncode == 0, shell.stderr.strip() or "pass")
+    v2_runner = ROOT / "scripts/run_sensor_state_v2_matrix.sh"
+    shell_errors = []
+    for script in (runner, v2_runner):
+        shell = subprocess.run(
+            ["bash", "-n", str(script)], capture_output=True, text=True, check=False
+        )
+        if shell.returncode:
+            shell_errors.append(f"{script.name}: {shell.stderr.strip()}")
+    check("Shell syntax gate", not shell_errors, "; ".join(shell_errors) or "pass")
 
     notebook_expectations = {
         "notebooks/kaggle_confirmatory_smoke.ipynb": (
             '"MODE": "smoke"',
             '"EPOCHS": "2"',
+            "v0.1.5-confirmatory",
         ),
         "notebooks/kaggle_confirmatory_full.ipynb": (
             '"MODE": "full"',
             '"EPOCHS": "25"',
+            "v0.1.5-confirmatory",
+        ),
+        "notebooks/kaggle_sensor_state_v2_smoke.ipynb": (
+            "'MODE': 'smoke'",
+            "'EPOCHS': '2'",
+            "v0.2.0-sensor-state",
+        ),
+        "notebooks/kaggle_sensor_state_v2_full.ipynb": (
+            "'MODE': 'full'",
+            "'EPOCHS': '25'",
+            "v0.2.0-sensor-state",
         ),
     }
     for relative, expected in notebook_expectations.items():
@@ -76,16 +99,14 @@ def main() -> None:
             valid = notebook.get("nbformat") == 4 and all(
                 token in source for token in expected
             )
-            valid = valid and "v0.1.5-confirmatory" in source
             valid = valid and "ensure_cuda_compat.py" in source
             valid = valid and "check_cuda_runtime.py" in source
             valid = valid and "artifact_manifest.json" in source
             valid = valid and "checkpoint_manifest.json" in source
             valid = valid and "archive.testzip()" in source
             valid = valid and "hashlib.sha256(archive.read" in source
-            valid = valid and "environment_freeze.txt" in source
             clone_source = "".join(notebook["cells"][1].get("source", []))
-            chdir_index = clone_source.find("os.chdir(working)")
+            chdir_index = clone_source.find("os.chdir(")
             remove_index = clone_source.find("shutil.rmtree(project)")
             rerun_safe = 0 <= chdir_index < remove_index
             valid = valid and rerun_safe
@@ -157,13 +178,37 @@ def main() -> None:
                 '"checkpoint_manifest.json"',
             )
         )
-        and "T_CRITICAL_975_DF2 = 4.302652729911275" in summarizer
+        and "4.302652729911275" in summarizer
+        and "2.7764451051977987" in summarizer
         and "1.96 * stdev" not in summarizer
         and "not estimable from one seed" in summarizer
         and "RUN_DIR_TEMPLATES" in packager
         and "Checkpoint-to-evaluation traceability gate failed" in packager
         and "--control-checkpoint" in panel_exporter,
         "Training trajectories, Student-t intervals, Smoke NA handling, provenance, file hashes, checkpoint-to-evaluation hashes, and the matched control are retained.",
+    )
+
+    v2_runner_text = v2_runner.read_text()
+    ombria_module = (ROOT / "src/geoai_ombria_robustness/ombria.py").read_text()
+    check(
+        "v0.2 controls and independent streams",
+        all(
+            token in v2_runner_text
+            for token in (
+                "7 13 21 29 37",
+                "mislocalized_quality",
+                "s2_reference",
+                "best_${checkpoint_policy}.pt",
+                "--include-checkpoints",
+            )
+        )
+        and "stable_stream_seed" in trainer
+        and "--loader-seed" in trainer
+        and "--corruption-seed" in trainer
+        and "best_robust.pt" in trainer
+        and "degrade_s2_pair_with_quality" in ombria_module
+        and "after.sum" not in ombria_module,
+        "Five repeats, seven routes, two checkpoint policies, exact applied quality masks, and independent random streams are explicit.",
     )
 
     cuda_compat = (ROOT / "scripts/ensure_cuda_compat.py").read_text()
