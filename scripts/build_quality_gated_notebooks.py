@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK_DIR = ROOT / "notebooks"
-SOURCE_REF = "v0.3.0-quality-gated"
+SOURCE_REF = "v0.3.1-quality-gated"
 REPOSITORY = "https://github.com/NewRudy/geoai-ombria-robustness.git"
 
 
@@ -87,8 +87,8 @@ with ZipFile(artifact) as archive:
     checkpoint_manifest_name = next(name for name in names if name.endswith('checkpoint_manifest.json'))
     checkpoint_manifest = json.loads(archive.read(checkpoint_manifest_name))
     assert checkpoint_manifest['weights_included'] is True
-decision_path = project / 'results' / 'quality_gated_v3_{mode}' / 'decision_gate.json'
-decision = json.loads(decision_path.read_text())['decision']
+    decision_manifest_name = next(name for name in names if name.endswith('decision_gate.json'))
+    decision = json.loads(archive.read(decision_manifest_name))['decision']
 {'assert decision["status"] == "pipeline_only"' if mode == 'smoke' else 'print("prespecified decision:", json.dumps(decision, indent=2))'}
 print('artifact MB:', round(artifact.stat().st_size / 1024**2, 1))
 display(FileLink(str(artifact)))

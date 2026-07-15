@@ -58,7 +58,7 @@ Cloud-like occlusion is synthetic. Zero filling simulates input absence without 
 
 ## Kaggle click-to-run workflow
 
-The current method entrypoints are `notebooks/kaggle_quality_gated_v3_smoke.ipynb` and `notebooks/kaggle_quality_gated_v3_full.ipynb`. Both clone the pinned `v0.3.0-quality-gated` tag, verify a real CUDA convolution, run the tests, execute the frozen protocol, verify every packaged file hash, and expose the result archive.
+The current method entrypoints are `notebooks/kaggle_quality_gated_v3_smoke.ipynb` and `notebooks/kaggle_quality_gated_v3_full.ipynb`. Both clone the pinned `v0.3.1-quality-gated` tag, verify a real CUDA convolution, run the tests, execute the frozen protocol, verify every packaged file hash (including the decision gate), and expose the result archive.
 
 Run Smoke first. It uses one seed, two epochs, and four core routes only; its scores are pipeline checks and cannot enter the manuscript. Run Full in a fresh Kaggle session only after the Smoke archive is reviewed.
 

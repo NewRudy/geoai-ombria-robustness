@@ -1,6 +1,6 @@
 [project]
 name = "geoai-ombria-robustness"
-version = "0.3.0"
+version = "0.3.1"
 description = "Reproducible OMBRIA code for sensor-state auditing and quality-gated Sentinel-1/Sentinel-2 fusion."
 requires-python = ">=3.10"
 dependencies = [

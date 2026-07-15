@@ -2,7 +2,7 @@
 
 ## v0.3 quality-gated method follow-up
 
-Use `notebooks/kaggle_quality_gated_v3_smoke.ipynb` first. It clones the pinned `v0.3.0-quality-gated` tag, verifies CUDA with a real convolution, runs all repository tests, trains the four core method/control routes for two epochs, evaluates the fixed sensor states, checks the prespecified-contrast exporter, and verifies the returned archive.
+Use `notebooks/kaggle_quality_gated_v3_smoke.ipynb` first. It clones the pinned `v0.3.1-quality-gated` tag, verifies CUDA with a real convolution, runs all repository tests, trains the four core method/control routes for two epochs, evaluates the fixed sensor states, checks the prespecified-contrast exporter, and verifies the returned archive including its packaged decision gate.
 
 Smoke is a pipeline gate only. Do not quote, graph, or use its scores in the manuscript.
 

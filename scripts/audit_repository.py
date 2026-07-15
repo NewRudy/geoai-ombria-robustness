@@ -98,13 +98,15 @@ def main() -> None:
         ),
         "notebooks/kaggle_quality_gated_v3_smoke.ipynb": (
             "'MODE': 'smoke'",
-            "v0.3.0-quality-gated",
+            "v0.3.1-quality-gated",
             "run_quality_gated_v3_matrix.sh",
+            "decision_gate.json",
         ),
         "notebooks/kaggle_quality_gated_v3_full.ipynb": (
             "'MODE': 'full'",
-            "v0.3.0-quality-gated",
+            "v0.3.1-quality-gated",
             "run_quality_gated_v3_matrix.sh",
+            "decision_gate.json",
         ),
     }
     for relative, expected in notebook_expectations.items():
@@ -194,6 +196,7 @@ def main() -> None:
                 '"run.log"',
                 '"sha256"',
                 '"checkpoint_manifest.json"',
+                '"decision_gate.json"',
             )
         )
         and "4.302652729911275" in summarizer

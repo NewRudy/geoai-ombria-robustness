@@ -42,6 +42,14 @@ class QualityGatedProtocolTests(unittest.TestCase):
                     }
                 )
             )
+            (root / "decision_gate.json").write_text(
+                json.dumps(
+                    {
+                        "schema": "geoai-ombria-quality-gated-decision-v1",
+                        "decision": {"status": "pipeline_only"},
+                    }
+                )
+            )
             for route in routes:
                 run_dir = root / "runs" / templates[route].format(seed=7)
                 run_dir.mkdir(parents=True)
@@ -96,6 +104,30 @@ class QualityGatedProtocolTests(unittest.TestCase):
                 manifest = json.loads(packaged.read(manifest_name))
                 self.assertEqual(manifest["protocol"], "quality-gated-v3")
                 self.assertTrue(manifest["schema"].endswith("v3"))
+                self.assertEqual(manifest["completeness_checks"]["decision_gate"], [1, 1])
+                decision_name = next(
+                    name
+                    for name in packaged.namelist()
+                    if name.endswith("decision_gate.json")
+                )
+                decision = json.loads(packaged.read(decision_name))
+                self.assertEqual(decision["decision"]["status"], "pipeline_only")
+
+            (root / "decision_gate.json").unlink()
+            with mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "package_confirmatory_artifacts.py",
+                    "--root",
+                    str(root),
+                    "--out",
+                    str(project / "missing-decision.zip"),
+                    "--include-checkpoints",
+                ],
+            ):
+                with self.assertRaisesRegex(RuntimeError, "decision_gate"):
+                    package_main()
 
 
 if __name__ == "__main__":

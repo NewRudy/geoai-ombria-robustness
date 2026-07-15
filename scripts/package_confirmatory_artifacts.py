@@ -24,6 +24,7 @@ PATTERNS = (
     "run.log",
     "checkpoint_manifest.json",
     "split_near_duplicate_audit.json",
+    "decision_gate.json",
 )
 
 RUN_DIR_TEMPLATES = {
@@ -125,6 +126,8 @@ def main() -> None:
             expected_evaluations,
         ),
     }
+    if protocol == "quality-gated-v3":
+        checks["decision_gate"] = (int((root / "decision_gate.json").is_file()), 1)
     failed = {name: counts for name, counts in checks.items() if counts[0] != counts[1]}
     if failed:
         raise RuntimeError(f"Artifact completeness gate failed: {failed}")
