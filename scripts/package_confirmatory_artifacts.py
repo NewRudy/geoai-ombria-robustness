@@ -72,12 +72,19 @@ def main() -> None:
     routes = experiment["routes"]
     policies = experiment.get("checkpoint_policies", ["clean"])
     modes = experiment["evaluation_modes"]
+    protocol = str(experiment.get("protocol", "sensor-state-v2"))
+    schema_version = (
+        "v3" if str(experiment.get("schema", "")).endswith("v3") else "v2"
+    )
+    run_dir_templates = experiment.get("run_directory_templates") or RUN_DIR_TEMPLATES
     expected_runs = len(seeds) * len(routes)
     expected_evaluations = expected_runs * len(policies) * len(modes)
-    if not set(routes).issubset(RUN_DIR_TEMPLATES):
+    if not set(routes).issubset(run_dir_templates):
         raise RuntimeError(f"Unknown confirmatory route set: {routes}")
     run_dir_by_route_seed = {
-        (route, int(seed)): root / "runs" / RUN_DIR_TEMPLATES[route].format(seed=seed)
+        (route, int(seed)): root
+        / "runs"
+        / run_dir_templates[route].format(seed=seed)
         for route in routes
         for seed in seeds
     }
@@ -200,9 +207,10 @@ def main() -> None:
     checkpoint_manifest_path.write_text(
         json.dumps(
             {
-                "schema": "geoai-ombria-confirmatory-checkpoints-v2",
+                "schema": f"geoai-ombria-confirmatory-checkpoints-{schema_version}",
+                "protocol": protocol,
                 "weights_included": args.include_checkpoints,
-                "note": "Hashes identify every validation-selected checkpoint used for evaluation. The v0.2 Full artifact includes the exact weights when include-checkpoints is enabled.",
+                "note": "Hashes identify every validation-selected checkpoint used for evaluation. Full artifacts include the exact weights when include-checkpoints is enabled.",
                 "checkpoints": [
                     {
                         "path": str(path.relative_to(root)),
@@ -226,7 +234,8 @@ def main() -> None:
     files = sorted(set(files))
     project_root = root.parents[1]
     manifest = {
-        "schema": "geoai-ombria-confirmatory-artifact-v2",
+        "schema": f"geoai-ombria-confirmatory-artifact-{schema_version}",
+        "protocol": protocol,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "completeness_checks": checks,
         "file_count_excluding_manifest": len(files),

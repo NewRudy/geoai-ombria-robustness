@@ -54,6 +54,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--runs-dir", type=Path, required=True)
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help="Optional manifest with dynamic route specs and run-directory templates.",
+    )
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument(
         "--checkpoint-policy", choices=("clean", "robust"), default="clean"
@@ -83,12 +89,33 @@ def load_model(checkpoint: Path, variant: str, quality: str, device):
 
     config = json.loads((checkpoint.parent / "config.json").read_text())
     model = build_model(
-        variant_channels(variant, quality), int(config["base_channels"])
+        variant_channels(variant, quality),
+        int(config["base_channels"]),
+        architecture=str(config.get("architecture", "early_fusion_unet")),
+        quality_branch_channels=config.get("quality_branch_channels"),
     )
     model.load_state_dict(torch.load(checkpoint, map_location="cpu"))
     model.to(device)
     model.eval()
     return model
+
+
+def route_definitions(manifest_path: Path | None):
+    if manifest_path is None:
+        return ROUTES
+    manifest = json.loads(manifest_path.read_text())
+    templates = manifest.get("run_directory_templates")
+    specs = manifest.get("route_specs")
+    if not templates or not specs:
+        raise ValueError("Manifest lacks run_directory_templates or route_specs")
+    return {
+        route: (
+            templates[route],
+            specs[route]["variant"],
+            specs[route]["s2_quality"],
+        )
+        for route in manifest["routes"]
+    }
 
 
 def predict(model, image: np.ndarray, device) -> np.ndarray:
@@ -115,24 +142,25 @@ def main() -> None:
     import torch
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    routes = route_definitions(args.manifest)
     checkpoints = {
         route: args.runs_dir
         / template.format(seed=args.seed)
         / f"best_{args.checkpoint_policy}.pt"
-        for route, (template, _, _) in ROUTES.items()
+        for route, (template, _, _) in routes.items()
     }
     missing = [str(path) for path in checkpoints.values() if not path.exists()]
     if missing:
         raise FileNotFoundError(f"Missing checkpoints: {missing}")
     models = {
         route: load_model(checkpoints[route], variant, quality, device)
-        for route, (_, variant, quality) in ROUTES.items()
+        for route, (_, variant, quality) in routes.items()
     }
     selected = {
         event: select_sample(collect_event_samples(args.root, event))
         for event in EVENTS
     }
-    route_names = list(ROUTES)
+    route_names = list(routes)
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     for mode in args.modes:
@@ -144,7 +172,7 @@ def main() -> None:
             truth = read_mask(sample.s2_mask)
             truth_rows.append(truth)
             event_probabilities: list[np.ndarray] = []
-            for route, (_, variant, quality) in ROUTES.items():
+            for route, (_, variant, quality) in routes.items():
                 effective_mode = "none" if route == "s1_reference" else mode
                 image, _ = load_sample(
                     sample,

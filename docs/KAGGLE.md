@@ -1,5 +1,29 @@
 # Kaggle Operator Guide
 
+## v0.3 quality-gated method follow-up
+
+Use `notebooks/kaggle_quality_gated_v3_smoke.ipynb` first. It clones the pinned `v0.3.0-quality-gated` tag, verifies CUDA with a real convolution, runs all repository tests, trains the four core method/control routes for two epochs, evaluates the fixed sensor states, checks the prespecified-contrast exporter, and verifies the returned archive.
+
+Smoke is a pipeline gate only. Do not quote, graph, or use its scores in the manuscript.
+
+After the Smoke archive passes review, open a fresh Kaggle session and import `notebooks/kaggle_quality_gated_v3_full.ipynb`. Full runs seven routes, five model seeds, 25 epochs, both checkpoint policies, and all eight sensor states. Its route matrix and interpretation thresholds are frozen in `docs/QUALITY_GATED_FUSION_V3_PROTOCOL.md`; do not change them after inspecting any Full result.
+
+One-time settings:
+
+1. Enable a GPU accelerator.
+2. Enable Internet access.
+3. Import the Smoke notebook and choose **Run All**.
+
+Return this file after Smoke:
+
+```text
+results/ombria_quality_gated_v3_artifacts.zip
+```
+
+The archive includes selected weights, their hashes, training configurations, raw event and chip metrics, paired contrast tables, the decision-gate JSON, runtime provenance, and a file-level hash manifest. Full also includes selected-chip error maps and aligned-versus-shifted effective-gate panels. Keep the Kaggle output version until the archive has been downloaded and reviewed locally.
+
+Full is expected to take roughly 5--7 hours on a P100; this is an estimate, and the actual duration is retained in `run.log`.
+
 ## v0.2 sensor-state follow-up
 
 Use `notebooks/kaggle_sensor_state_v2_smoke.ipynb` first and `notebooks/kaggle_sensor_state_v2_full.ipynb` only after the smoke artifact passes review. Both clone the immutable tag, verify a real CUDA convolution, run the seven-route protocol, verify the returned archive, and show direct links for the evidence package.

@@ -24,6 +24,11 @@ from geoai_ombria_robustness.ombria import (  # noqa: E402
     summarize_samples,
     variant_channels,
 )
+from geoai_ombria_robustness.models import (  # noqa: E402
+    MODEL_ARCHITECTURES,
+    build_model as build_segmentation_model,
+    count_trainable_parameters,
+)
 
 
 def stable_stream_seed(base_seed: int, epoch: int, chip_id: str, stream: str) -> int:
@@ -130,6 +135,23 @@ def parse_args() -> argparse.Namespace:
         "--train-degrade-s2", choices=TRAIN_S2_DEGRADATIONS, default="none"
     )
     parser.add_argument("--s2-quality", choices=S2_QUALITY_MODES, default="none")
+    parser.add_argument(
+        "--architecture",
+        choices=MODEL_ARCHITECTURES,
+        default=None,
+        help="Defaults to early_fusion_unet, or is inferred from --eval-checkpoint.",
+    )
+    parser.add_argument(
+        "--quality-branch-channels",
+        type=int,
+        default=None,
+        help="Optional modality-branch width for quality_gated_fusion.",
+    )
+    parser.add_argument(
+        "--run-name",
+        default=None,
+        help="Explicit result-directory name; protocol runners use stable route names.",
+    )
     parser.add_argument("--out-dir", type=Path, default=Path("results/runs/ombria"))
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=8)
@@ -260,59 +282,19 @@ def split_train_val(
     return train_samples, val_samples
 
 
-def build_model(in_channels: int, base_channels: int):
-    import torch
-    import torch.nn as nn
-    import torch.nn.functional as F
-
-    class DoubleConv(nn.Module):
-        def __init__(self, in_ch: int, out_ch: int) -> None:
-            super().__init__()
-            self.net = nn.Sequential(
-                nn.Conv2d(in_ch, out_ch, 3, padding=1),
-                nn.BatchNorm2d(out_ch),
-                nn.LeakyReLU(0.1, inplace=True),
-                nn.Conv2d(out_ch, out_ch, 3, padding=1),
-                nn.BatchNorm2d(out_ch),
-                nn.LeakyReLU(0.1, inplace=True),
-            )
-
-        def forward(self, x):
-            return self.net(x)
-
-    class SmallUNet(nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            c = base_channels
-            self.enc1 = DoubleConv(in_channels, c)
-            self.enc2 = DoubleConv(c, c * 2)
-            self.enc3 = DoubleConv(c * 2, c * 4)
-            self.pool = nn.MaxPool2d(2)
-            self.bottleneck = DoubleConv(c * 4, c * 8)
-            self.up3 = nn.ConvTranspose2d(c * 8, c * 4, 2, stride=2)
-            self.dec3 = DoubleConv(c * 8, c * 4)
-            self.up2 = nn.ConvTranspose2d(c * 4, c * 2, 2, stride=2)
-            self.dec2 = DoubleConv(c * 4, c * 2)
-            self.up1 = nn.ConvTranspose2d(c * 2, c, 2, stride=2)
-            self.dec1 = DoubleConv(c * 2, c)
-            self.out = nn.Conv2d(c, 1, 1)
-
-        def forward(self, x):
-            e1 = self.enc1(x)
-            e2 = self.enc2(self.pool(e1))
-            e3 = self.enc3(self.pool(e2))
-            b = self.bottleneck(self.pool(e3))
-            d3 = self.up3(b)
-            d3 = self.dec3(torch.cat([d3, e3], dim=1))
-            d2 = self.up2(d3)
-            d2 = self.dec2(torch.cat([d2, e2], dim=1))
-            d1 = self.up1(d2)
-            if d1.shape[-2:] != e1.shape[-2:]:
-                d1 = F.interpolate(d1, size=e1.shape[-2:], mode="bilinear")
-            d1 = self.dec1(torch.cat([d1, e1], dim=1))
-            return self.out(d1)
-
-    return SmallUNet()
+def build_model(
+    in_channels: int,
+    base_channels: int,
+    architecture: str = "early_fusion_unet",
+    quality_branch_channels: int | None = None,
+):
+    """Backward-compatible script-level model factory."""
+    return build_segmentation_model(
+        in_channels,
+        base_channels,
+        architecture=architecture,
+        quality_branch_channels=quality_branch_channels,
+    )
 
 
 def binary_metrics(logits, target) -> dict[str, float]:
@@ -393,6 +375,57 @@ def main() -> None:
     ):
         raise ValueError("SAR-anchor train modes require --anchor-checkpoint")
 
+    checkpoint_config: dict[str, object] = {}
+    if args.eval_checkpoint is not None:
+        checkpoint_config_path = args.eval_checkpoint.parent / "config.json"
+        if not checkpoint_config_path.exists():
+            raise FileNotFoundError(
+                f"Missing checkpoint configuration: {checkpoint_config_path}"
+            )
+        with checkpoint_config_path.open() as handle:
+            checkpoint_config = json.load(handle)
+        checkpoint_architecture = str(
+            checkpoint_config.get("architecture", "early_fusion_unet")
+        )
+        if args.architecture is not None and args.architecture != checkpoint_architecture:
+            raise ValueError(
+                "--architecture disagrees with the checkpoint configuration: "
+                f"{args.architecture!r} != {checkpoint_architecture!r}"
+            )
+        args.architecture = checkpoint_architecture
+        configured_branch_channels = checkpoint_config.get("quality_branch_channels")
+        if (
+            args.quality_branch_channels is not None
+            and configured_branch_channels is not None
+            and args.quality_branch_channels != int(configured_branch_channels)
+        ):
+            raise ValueError(
+                "--quality-branch-channels disagrees with the checkpoint configuration"
+            )
+        if configured_branch_channels is not None:
+            args.quality_branch_channels = int(configured_branch_channels)
+        for key, supplied in (
+            ("variant", args.variant),
+            ("s2_quality", args.s2_quality),
+        ):
+            configured = checkpoint_config.get(key)
+            if configured is not None and configured != supplied:
+                raise ValueError(
+                    f"Checkpoint {key}={configured!r} but evaluation requested {supplied!r}"
+                )
+    if args.architecture is None:
+        args.architecture = "early_fusion_unet"
+    if args.architecture == "quality_gated_fusion":
+        if args.variant != "multimodal" or args.s2_quality == "none":
+            raise ValueError(
+                "quality_gated_fusion requires --variant multimodal and an explicit "
+                "--s2-quality map"
+            )
+    elif args.quality_branch_channels is not None:
+        raise ValueError(
+            "--quality-branch-channels is only valid for quality_gated_fusion"
+        )
+
     train_all = collect_ombria_samples(args.root, "train")
     test_samples = collect_ombria_samples(args.root, "test")
     train_samples, val_samples = split_train_val(
@@ -406,6 +439,8 @@ def main() -> None:
         variant_channels(args.variant, args.s2_quality),
         "s2_quality",
         args.s2_quality,
+        "architecture",
+        args.architecture,
     )
     print("train", summarize_samples(train_samples))
     print("val", summarize_samples(val_samples))
@@ -431,17 +466,35 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = build_model(
-        variant_channels(args.variant, args.s2_quality), args.base_channels
+        variant_channels(args.variant, args.s2_quality),
+        args.base_channels,
+        architecture=args.architecture,
+        quality_branch_channels=args.quality_branch_channels,
     ).to(device)
+    args.quality_branch_channels = getattr(model, "quality_branch_channels", None)
+    model_parameters = count_trainable_parameters(model)
+    print(
+        "model_parameters",
+        model_parameters,
+        "quality_branch_channels",
+        args.quality_branch_channels,
+    )
     train_suffix = (
         "" if args.train_degrade_s2 == "none" else f"_train-{args.train_degrade_s2}"
     )
-    if args.eval_checkpoint is None:
+    if args.run_name is not None:
+        run_name = args.run_name
+    elif args.eval_checkpoint is None:
         quality_suffix = (
             "" if args.s2_quality == "none" else f"_quality-{args.s2_quality}"
         )
+        architecture_suffix = (
+            ""
+            if args.architecture == "early_fusion_unet"
+            else f"_architecture-{args.architecture}"
+        )
         run_name = (
-            f"{args.variant}{quality_suffix}_{args.degrade_s2}"
+            f"{args.variant}{quality_suffix}{architecture_suffix}_{args.degrade_s2}"
             f"{train_suffix}_seed{args.seed}"
         )
     else:
@@ -449,7 +502,12 @@ def main() -> None:
     run_dir = args.out_dir / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
     with (run_dir / "config.json").open("w") as f:
-        json.dump(vars(args), f, indent=2, default=str)
+        json.dump(
+            {**vars(args), "model_parameters": model_parameters},
+            f,
+            indent=2,
+            default=str,
+        )
 
     if args.eval_checkpoint is not None:
         test_ds = OmbriaTorchDataset(
@@ -467,11 +525,6 @@ def main() -> None:
         )
         model.load_state_dict(torch.load(args.eval_checkpoint, map_location=device))
         test = evaluate(model, test_loader, device)
-        checkpoint_config_path = args.eval_checkpoint.parent / "config.json"
-        checkpoint_config = {}
-        if checkpoint_config_path.exists():
-            with checkpoint_config_path.open() as f:
-                checkpoint_config = json.load(f)
         out = {
             "checkpoint": str(args.eval_checkpoint),
             "checkpoint_base_channels": checkpoint_config.get("base_channels"),
@@ -479,10 +532,15 @@ def main() -> None:
             "checkpoint_epochs": checkpoint_config.get("epochs"),
             "checkpoint_train_degrade_s2": checkpoint_config.get("train_degrade_s2"),
             "checkpoint_s2_quality": checkpoint_config.get("s2_quality"),
+            "checkpoint_architecture": checkpoint_config.get(
+                "architecture", "early_fusion_unet"
+            ),
+            "checkpoint_model_parameters": checkpoint_config.get("model_parameters"),
             "variant": args.variant,
             "degrade_s2": args.degrade_s2,
             "train_degrade_s2": args.train_degrade_s2,
             "s2_quality": args.s2_quality,
+            "architecture": args.architecture,
             **{f"test_{key}": value for key, value in test.items()},
         }
         with (run_dir / "eval_metrics.json").open("w") as f:
@@ -535,7 +593,9 @@ def main() -> None:
     anchor_model = None
     if is_sar_anchor_mode(args.train_degrade_s2):
         anchor_model = build_model(
-            variant_channels("s1_bitemporal"), args.base_channels
+            variant_channels("s1_bitemporal"),
+            args.base_channels,
+            architecture="early_fusion_unet",
         ).to(device)
         anchor_model.load_state_dict(
             torch.load(args.anchor_checkpoint, map_location=device)
@@ -666,6 +726,9 @@ def main() -> None:
                     "robust_sensitivity": "best_robust.pt",
                     "robust_rule": "maximum mean validation IoU across predefined states",
                     "robust_validation_modes": list(args.robust_val_modes),
+                    "architecture": args.architecture,
+                    "model_parameters": model_parameters,
+                    "quality_branch_channels": args.quality_branch_channels,
                     "best_clean_epoch": best_clean_epoch,
                     "best_clean_iou": best_clean_iou,
                     "best_clean_sha256": file_sha256(clean_checkpoint),

@@ -22,17 +22,23 @@ def main() -> None:
         "CITATION.cff",
         "docs/CONFIRMATORY_PROTOCOL.md",
         "docs/SENSOR_STATE_V2_PROTOCOL.md",
+        "docs/QUALITY_GATED_FUSION_V3_PROTOCOL.md",
         "docs/KAGGLE.md",
         "notebooks/kaggle_confirmatory_smoke.ipynb",
         "notebooks/kaggle_confirmatory_full.ipynb",
         "notebooks/kaggle_sensor_state_v2_smoke.ipynb",
         "notebooks/kaggle_sensor_state_v2_full.ipynb",
+        "notebooks/kaggle_quality_gated_v3_smoke.ipynb",
+        "notebooks/kaggle_quality_gated_v3_full.ipynb",
         "scripts/train_ombria_unet.py",
         "scripts/evaluate_ombria_2021_events.py",
         "scripts/summarize_confirmatory_events.py",
         "scripts/export_confirmatory_event_panels.py",
         "scripts/run_confirmatory_event_matrix.sh",
         "scripts/run_sensor_state_v2_matrix.sh",
+        "scripts/run_quality_gated_v3_matrix.sh",
+        "scripts/summarize_quality_gated_v3.py",
+        "scripts/export_quality_gate_panels.py",
         "scripts/audit_split_near_duplicates.py",
         "scripts/export_sensor_state_v2_probabilities.py",
         "scripts/ensure_cuda_compat.py",
@@ -40,6 +46,7 @@ def main() -> None:
         "scripts/write_experiment_manifest.py",
         "scripts/package_confirmatory_artifacts.py",
         "src/geoai_ombria_robustness/ombria.py",
+        "src/geoai_ombria_robustness/models.py",
     ]
     for relative in required:
         check(f"required: {relative}", (ROOT / relative).is_file(), relative)
@@ -58,8 +65,9 @@ def main() -> None:
 
     runner = ROOT / "scripts/run_confirmatory_event_matrix.sh"
     v2_runner = ROOT / "scripts/run_sensor_state_v2_matrix.sh"
+    v3_runner = ROOT / "scripts/run_quality_gated_v3_matrix.sh"
     shell_errors = []
-    for script in (runner, v2_runner):
+    for script in (runner, v2_runner, v3_runner):
         shell = subprocess.run(
             ["bash", "-n", str(script)], capture_output=True, text=True, check=False
         )
@@ -87,6 +95,16 @@ def main() -> None:
             "'MODE': 'full'",
             "'EPOCHS': '25'",
             "v0.2.0-sensor-state",
+        ),
+        "notebooks/kaggle_quality_gated_v3_smoke.ipynb": (
+            "'MODE': 'smoke'",
+            "v0.3.0-quality-gated",
+            "run_quality_gated_v3_matrix.sh",
+        ),
+        "notebooks/kaggle_quality_gated_v3_full.ipynb": (
+            "'MODE': 'full'",
+            "v0.3.0-quality-gated",
+            "run_quality_gated_v3_matrix.sh",
         ),
     }
     for relative, expected in notebook_expectations.items():
@@ -209,6 +227,34 @@ def main() -> None:
         and "degrade_s2_pair_with_quality" in ombria_module
         and "after.sum" not in ombria_module,
         "Five repeats, seven routes, two checkpoint policies, exact applied quality masks, and independent random streams are explicit.",
+    )
+
+    v3_runner_text = v3_runner.read_text()
+    model_module = (ROOT / "src/geoai_ombria_robustness/models.py").read_text()
+    v3_summary = (ROOT / "scripts/summarize_quality_gated_v3.py").read_text()
+    check(
+        "v0.3 quality-gated method contract",
+        all(
+            token in v3_runner_text
+            for token in (
+                "7 13 21 29 37",
+                "quality_concat",
+                "quality_gated",
+                "gated_misaligned",
+                "s1_reference",
+                "s2_reference",
+                "summarize_quality_gated_v3.py",
+                "--include-checkpoints",
+            )
+        )
+        and "s2_before = x[:, 0:3] * quality_before" in model_module
+        and "return_gate_maps" in model_module
+        and "return availability * learned" in model_module
+        and "architecture_partial" in v3_summary
+        and "localization_partial" in v3_summary
+        and "information_partial" in v3_summary
+        and "pipeline_only" in v3_summary,
+        "QGSF sanitization, hard gates, matched controls, five seeds, fixed contrasts, and Smoke exclusion are explicit.",
     )
 
     cuda_compat = (ROOT / "scripts/ensure_cuda_compat.py").read_text()

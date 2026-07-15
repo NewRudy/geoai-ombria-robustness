@@ -221,6 +221,7 @@ def evaluate_event(
                         "route": args.route,
                         "variant": args.variant,
                         "s2_quality": args.s2_quality,
+                        "architecture": args.architecture,
                         "degrade_s2": args.degrade_s2,
                         "model_seed": args.model_seed,
                         "checkpoint_policy": args.checkpoint_policy,
@@ -256,8 +257,29 @@ def main() -> None:
     checkpoint_sha256 = file_sha256(args.checkpoint)
     checkpoint_bytes = args.checkpoint.stat().st_size
     base_channels = int(config["base_channels"])
+    architecture = str(config.get("architecture", "early_fusion_unet"))
+    quality_branch_channels = config.get("quality_branch_channels")
+    for key, supplied in (
+        ("variant", args.variant),
+        ("s2_quality", args.s2_quality),
+    ):
+        configured = config.get(key)
+        if configured is not None and configured != supplied:
+            raise ValueError(
+                f"Checkpoint {key}={configured!r} but evaluation requested {supplied!r}"
+            )
+    args.architecture = architecture
     expected_channels = variant_channels(args.variant, args.s2_quality)
-    model = build_model(expected_channels, base_channels)
+    model = build_model(
+        expected_channels,
+        base_channels,
+        architecture=architecture,
+        quality_branch_channels=(
+            None
+            if quality_branch_channels is None
+            else int(quality_branch_channels)
+        ),
+    )
     model.load_state_dict(torch.load(args.checkpoint, map_location="cpu"))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -271,6 +293,9 @@ def main() -> None:
                 "checkpoint": str(args.checkpoint),
                 "checkpoint_bytes": checkpoint_bytes,
                 "checkpoint_sha256": checkpoint_sha256,
+                "architecture": architecture,
+                "model_parameters": config.get("model_parameters"),
+                "quality_branch_channels": quality_branch_channels,
                 "out_dir": str(args.out_dir),
                 "event_counts": {
                     event: len(samples) for event, samples in event_samples.items()
@@ -297,6 +322,7 @@ def main() -> None:
                     "route": args.route,
                     "variant": args.variant,
                     "s2_quality": args.s2_quality,
+                    "architecture": args.architecture,
                     "degrade_s2": args.degrade_s2,
                     "model_seed": args.model_seed,
                     "checkpoint_policy": args.checkpoint_policy,
@@ -316,6 +342,7 @@ def main() -> None:
                 "route": args.route,
                 "variant": args.variant,
                 "s2_quality": args.s2_quality,
+                "architecture": args.architecture,
                 "degrade_s2": args.degrade_s2,
                 "model_seed": args.model_seed,
                 "checkpoint_policy": args.checkpoint_policy,

@@ -6,6 +6,20 @@ Reproducible code for the manuscript:
 
 The project tests how multitemporal Sentinel-1/Sentinel-2 flood segmentation changes when the Sentinel-2 stream is clean, synthetically occluded, noisy, or zero-filled to simulate absence. It is an OMBRIA-only controlled stress test, not evidence of observed-cloud robustness, operational deployment, state-of-the-art performance, or universal generalization.
 
+## v0.3 prospective method follow-up
+
+v0.3 turns the v0.2 diagnostic into a falsifiable method study. The proposed Quality-Gated Sensor-State Fusion (QGSF) architecture uses separate S1 and shared bitemporal S2 encoders, sanitizes unavailable optical inputs, and applies hard availability-constrained learned gates at three scales. When both S2 quality maps are zero, every optical term supplied to fusion is exactly zero and the network follows its S1 path.
+
+The Full matrix compares:
+
+- clean and corruption-trained early fusion;
+- quality maps concatenated as input channels;
+- aligned QGSF;
+- the same QGSF architecture with prevalence-preserving shifted quality maps;
+- S1-only and S2-only references.
+
+The architecture, matched controls, paired contrasts, and decision thresholds are frozen in [`docs/QUALITY_GATED_FUSION_V3_PROTOCOL.md`](docs/QUALITY_GATED_FUSION_V3_PROTOCOL.md). This is a prospective method candidate: the repository does not claim it works until the Full artifact passes those gates.
+
 ## Released v0.1.5 evidence
 
 The corrected v0.1.5 evidence archive contains the five-route, three-run, eight-state evaluation over 150 chips from four released 2021 OMBRIA events. The statistical correction recomputes `df = 2` Student-t intervals from the original raw confusion counts; model means are unchanged and no retraining was performed.
@@ -44,9 +58,24 @@ Cloud-like occlusion is synthetic. Zero filling simulates input absence without 
 
 ## Kaggle click-to-run workflow
 
-The v0.1.5 smoke and Full notebooks remain historical entrypoints. The v0.2 entrypoints are `notebooks/kaggle_sensor_state_v2_smoke.ipynb` and `notebooks/kaggle_sensor_state_v2_full.ipynb`; both run `scripts/run_sensor_state_v2_matrix.sh` from a pinned Git tag. In Kaggle, enable a GPU and Internet access, import the appropriate notebook, and choose **Run All**.
+The current method entrypoints are `notebooks/kaggle_quality_gated_v3_smoke.ipynb` and `notebooks/kaggle_quality_gated_v3_full.ipynb`. Both clone the pinned `v0.3.0-quality-gated` tag, verify a real CUDA convolution, run the tests, execute the frozen protocol, verify every packaged file hash, and expose the result archive.
 
-The runner supports:
+Run Smoke first. It uses one seed, two epochs, and four core routes only; its scores are pipeline checks and cannot enter the manuscript. Run Full in a fresh Kaggle session only after the Smoke archive is reviewed.
+
+```bash
+MODE=smoke bash scripts/run_quality_gated_v3_matrix.sh
+MODE=full bash scripts/run_quality_gated_v3_matrix.sh
+```
+
+The returned archive is:
+
+```text
+results/ombria_quality_gated_v3_artifacts.zip
+```
+
+The historical v0.1.5 and v0.2 notebooks remain available. The v0.2 entrypoints are `notebooks/kaggle_sensor_state_v2_smoke.ipynb` and `notebooks/kaggle_sensor_state_v2_full.ipynb`.
+
+The v0.2 runner supports:
 
 ```bash
 MODE=smoke EPOCHS=2 bash scripts/run_sensor_state_v2_matrix.sh
@@ -97,6 +126,8 @@ Included:
 - compact U-Net training and validation-only checkpoint selection;
 - global, per-event, and per-chip metric export;
 - quality-map and modality controls;
+- capacity-controlled quality-gated sensor-state fusion;
+- prespecified paired method contrasts and an outcome-independent decision gate;
 - evidence packaging with checkpoint and file hashes;
 - Kaggle runtime compatibility checks.
 

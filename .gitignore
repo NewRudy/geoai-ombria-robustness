@@ -21,4 +21,6 @@ notebooks/*
 !notebooks/kaggle_confirmatory_full.ipynb
 !notebooks/kaggle_sensor_state_v2_smoke.ipynb
 !notebooks/kaggle_sensor_state_v2_full.ipynb
+!notebooks/kaggle_quality_gated_v3_smoke.ipynb
+!notebooks/kaggle_quality_gated_v3_full.ipynb
 scratch/
