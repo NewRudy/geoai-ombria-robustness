@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "notebooks" / "kaggle_quality_uncertainty_smoke.ipynb"
 REPOSITORY = "https://github.com/NewRudy/geoai-ombria-robustness.git"
-SOURCE_REF = "codex/quality-map-uncertainty"
+SOURCE_COMMIT = "98b1e75ee2df71863d6ae6b257cf1a6e0a60ccbb"
 
 
 def markdown(source: str) -> dict[str, object]:
@@ -37,13 +37,27 @@ project = WORKING / 'geoai-ombria-robustness'
 os.chdir(WORKING)
 if project.exists():
     shutil.rmtree(project)
+project.mkdir(parents=True)
 subprocess.run(
-    ['git', 'clone', '--depth', '1', '--branch', {SOURCE_REF!r}, {REPOSITORY!r}, str(project)],
+    ['git', '-C', str(project), 'init', '-q'],
+    check=True,
+)
+subprocess.run(
+    ['git', '-C', str(project), 'remote', 'add', 'origin', {REPOSITORY!r}],
+    check=True,
+)
+subprocess.run(
+    ['git', '-C', str(project), 'fetch', '--depth', '1', 'origin', {SOURCE_COMMIT!r}],
+    check=True,
+)
+subprocess.run(
+    ['git', '-C', str(project), 'checkout', '-q', '--detach', 'FETCH_HEAD'],
     check=True,
 )
 os.chdir(project)
 commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
-print('source:', {SOURCE_REF!r}, commit)
+assert commit == {SOURCE_COMMIT!r}, (commit, {SOURCE_COMMIT!r})
+print('source commit:', commit)
 """
     dependencies = """subprocess.run(
     [sys.executable, '-m', 'pip', 'install', '-q', 'rasterio>=1.4'],
