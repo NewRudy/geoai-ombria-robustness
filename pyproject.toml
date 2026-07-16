@@ -11,6 +11,11 @@ dependencies = [
   "matplotlib>=3.7",
 ]
 
+[project.optional-dependencies]
+sen1floods11 = [
+  "rasterio>=1.4",
+]
+
 [tool.ruff]
 line-length = 88
 target-version = "py310"

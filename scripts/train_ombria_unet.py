@@ -20,6 +20,7 @@ from geoai_ombria_robustness.ombria import (  # noqa: E402
     VARIANTS,
     OmbriaSample,
     collect_ombria_samples,
+    load_multimodal_quality_uncertainty_sample,
     load_sample,
     summarize_samples,
     variant_channels,
@@ -173,6 +174,22 @@ def parse_args() -> argparse.Namespace:
         help="Independent training-corruption seed; defaults to model seed + 300000.",
     )
     parser.add_argument(
+        "--quality-error-seed",
+        type=int,
+        default=None,
+        help="Independent quality-map-error seed; defaults to model seed + 400000.",
+    )
+    parser.add_argument(
+        "--train-quality-error-rates",
+        nargs="*",
+        type=float,
+        default=(),
+        help=(
+            "Optional discrete rates sampled independently for false-available "
+            "and false-unavailable quality errors during training."
+        ),
+    )
+    parser.add_argument(
         "--split-seed",
         type=int,
         default=20260710,
@@ -210,6 +227,8 @@ class OmbriaTorchDataset:
         return_anchor: bool = False,
         train_degrade_s2: str = "none",
         epoch_dependent: bool = False,
+        quality_error_rates: tuple[float, ...] = (),
+        quality_error_seed: int | None = None,
     ) -> None:
         import torch
         from torch.utils.data import Dataset
@@ -234,13 +253,52 @@ class OmbriaTorchDataset:
                     sample_degrade_s2 = choose_train_degrade_s2(degrade_s2, rng)
                 else:
                     sample_degrade_s2 = degrade_s2
-                image, mask = load_sample(
-                    sample,
-                    variant,
-                    sample_degrade_s2,
-                    rng,
-                    s2_quality=s2_quality,
-                )
+                if quality_error_rates:
+                    if variant != "multimodal" or s2_quality != "binary":
+                        raise ValueError(
+                            "Quality-error training requires multimodal binary "
+                            "quality input"
+                        )
+                    if quality_error_seed is None:
+                        raise ValueError("quality_error_seed is required")
+                    rate_rng = np.random.default_rng(
+                        stable_stream_seed(
+                            quality_error_seed,
+                            epoch,
+                            sample.chip_id,
+                            "quality_error_rates",
+                        )
+                    )
+                    false_available_rate = float(
+                        rate_rng.choice(quality_error_rates)
+                    )
+                    false_unavailable_rate = float(
+                        rate_rng.choice(quality_error_rates)
+                    )
+                    loaded = load_multimodal_quality_uncertainty_sample(
+                        sample,
+                        sample_degrade_s2,
+                        degradation_rng=rng,
+                        quality_rng=np.random.default_rng(
+                            stable_stream_seed(
+                                quality_error_seed,
+                                epoch,
+                                sample.chip_id,
+                                "quality_error_pixels",
+                            )
+                        ),
+                        false_available_rate=false_available_rate,
+                        false_unavailable_rate=false_unavailable_rate,
+                    )
+                    image, mask = loaded.image, loaded.target
+                else:
+                    image, mask = load_sample(
+                        sample,
+                        variant,
+                        sample_degrade_s2,
+                        rng,
+                        s2_quality=s2_quality,
+                    )
                 x = torch.from_numpy(np.moveaxis(image, 2, 0))
                 y = torch.from_numpy(mask[None, :, :])
                 if return_anchor:
@@ -358,6 +416,17 @@ def main() -> None:
         args.loader_seed = args.seed + 200_000
     if args.corruption_seed is None:
         args.corruption_seed = args.seed + 300_000
+    if args.quality_error_seed is None:
+        args.quality_error_seed = args.seed + 400_000
+    if any(rate < 0.0 or rate > 1.0 for rate in args.train_quality_error_rates):
+        raise ValueError("--train-quality-error-rates must lie within [0, 1]")
+    if args.train_quality_error_rates and (
+        args.variant != "multimodal" or args.s2_quality != "binary"
+    ):
+        raise ValueError(
+            "--train-quality-error-rates requires --variant multimodal "
+            "and --s2-quality binary"
+        )
     if not args.robust_val_modes or "none" not in args.robust_val_modes:
         raise ValueError("--robust-val-modes must include 'none'")
     if args.train_degrade_s2 != "none" and args.variant != "multimodal":
@@ -415,15 +484,19 @@ def main() -> None:
                 )
     if args.architecture is None:
         args.architecture = "early_fusion_unet"
-    if args.architecture == "quality_gated_fusion":
+    quality_gate_architectures = {
+        "quality_gated_fusion",
+        "soft_quality_prior_fusion",
+    }
+    if args.architecture in quality_gate_architectures:
         if args.variant != "multimodal" or args.s2_quality == "none":
             raise ValueError(
-                "quality_gated_fusion requires --variant multimodal and an explicit "
-                "--s2-quality map"
+                f"{args.architecture} requires --variant multimodal and an "
+                "explicit --s2-quality map"
             )
     elif args.quality_branch_channels is not None:
         raise ValueError(
-            "--quality-branch-channels is only valid for quality_gated_fusion"
+            "--quality-branch-channels is only valid for quality-gated architectures"
         )
 
     train_all = collect_ombria_samples(args.root, "train")
@@ -557,6 +630,8 @@ def main() -> None:
         return_anchor=is_sar_anchor_mode(args.train_degrade_s2),
         train_degrade_s2=args.train_degrade_s2,
         epoch_dependent=True,
+        quality_error_rates=tuple(args.train_quality_error_rates),
+        quality_error_seed=args.quality_error_seed,
     ).dataset
     val_datasets = {
         mode: OmbriaTorchDataset(

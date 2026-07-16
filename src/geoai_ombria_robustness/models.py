@@ -6,6 +6,7 @@ from typing import Any
 MODEL_ARCHITECTURES = (
     "early_fusion_unet",
     "quality_gated_fusion",
+    "soft_quality_prior_fusion",
 )
 
 
@@ -44,12 +45,15 @@ def build_model(
         return _build_early_fusion_unet(in_channels, base_channels)
     if in_channels != 10:
         raise ValueError(
-            "quality_gated_fusion requires the 10-channel multimodal layout "
+            f"{architecture} requires the 10-channel multimodal layout "
             "(S2 before/after, S1 before/after, quality before/after)"
         )
     return _build_quality_gated_fusion(
         base_channels,
         resolve_quality_branch_channels(base_channels, quality_branch_channels),
+        gate_mode=(
+            "hard" if architecture == "quality_gated_fusion" else "soft_prior"
+        ),
     )
 
 
@@ -112,7 +116,11 @@ def _build_early_fusion_unet(in_channels: int, base_channels: int):
     return SmallUNet()
 
 
-def _build_quality_gated_fusion(base_channels: int, branch_channels: int):
+def _build_quality_gated_fusion(
+    base_channels: int,
+    branch_channels: int,
+    gate_mode: str = "hard",
+):
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
@@ -133,8 +141,11 @@ def _build_quality_gated_fusion(base_channels: int, branch_channels: int):
             return self.net(x)
 
     class QualityGate(nn.Module):
-        def __init__(self, radar_ch: int, optical_ch: int) -> None:
+        def __init__(self, radar_ch: int, optical_ch: int, mode: str) -> None:
             super().__init__()
+            if mode not in {"hard", "soft_prior"}:
+                raise ValueError(f"Unknown quality gate mode: {mode}")
+            self.mode = mode
             hidden = max(4, optical_ch // 2)
             self.net = nn.Sequential(
                 nn.Conv2d(radar_ch + optical_ch + 1, hidden, 1),
@@ -142,18 +153,34 @@ def _build_quality_gated_fusion(base_channels: int, branch_channels: int):
                 nn.Conv2d(hidden, 1, 1),
             )
             nn.init.zeros_(self.net[-1].weight)
-            nn.init.constant_(self.net[-1].bias, 2.0)
+            nn.init.constant_(
+                self.net[-1].bias,
+                2.0 if mode == "hard" else 0.0,
+            )
 
-        def forward(self, radar, optical, availability):
+        def forward(
+            self,
+            radar,
+            optical,
+            availability,
+            structural_present=None,
+        ):
             if availability.shape[-2:] != optical.shape[-2:]:
                 availability = F.interpolate(
                     availability, size=optical.shape[-2:], mode="area"
                 )
             availability = availability.clamp(0.0, 1.0)
-            learned = torch.sigmoid(
-                self.net(torch.cat([radar, optical, availability], dim=1))
+            correction = self.net(
+                torch.cat([radar, optical, availability], dim=1)
             )
-            return availability * learned
+            if self.mode == "hard":
+                gate = availability * torch.sigmoid(correction)
+            else:
+                prior = availability.clamp(0.05, 0.95)
+                gate = torch.sigmoid(torch.logit(prior) + correction)
+                if structural_present is not None:
+                    gate = gate * structural_present
+            return gate
 
     class QualityGatedFusionUNet(nn.Module):
         """S1-preserving fusion with explicit bitemporal S2 availability gates.
@@ -166,7 +193,12 @@ def _build_quality_gated_fusion(base_channels: int, branch_channels: int):
             super().__init__()
             c = base_channels
             b = branch_channels
-            self.architecture = "quality_gated_fusion"
+            self.gate_mode = gate_mode
+            self.architecture = (
+                "quality_gated_fusion"
+                if gate_mode == "hard"
+                else "soft_quality_prior_fusion"
+            )
             self.quality_branch_channels = b
             self.pool = nn.MaxPool2d(2)
 
@@ -179,12 +211,12 @@ def _build_quality_gated_fusion(base_channels: int, branch_channels: int):
             self.s2_enc2 = DoubleConv(b, b * 2)
             self.s2_enc3 = DoubleConv(b * 2, b * 4)
 
-            self.pre_gate1 = QualityGate(b, b)
-            self.post_gate1 = QualityGate(b, b)
-            self.pre_gate2 = QualityGate(b * 2, b * 2)
-            self.post_gate2 = QualityGate(b * 2, b * 2)
-            self.pre_gate3 = QualityGate(b * 4, b * 4)
-            self.post_gate3 = QualityGate(b * 4, b * 4)
+            self.pre_gate1 = QualityGate(b, b, gate_mode)
+            self.post_gate1 = QualityGate(b, b, gate_mode)
+            self.pre_gate2 = QualityGate(b * 2, b * 2, gate_mode)
+            self.post_gate2 = QualityGate(b * 2, b * 2, gate_mode)
+            self.pre_gate3 = QualityGate(b * 4, b * 4, gate_mode)
+            self.post_gate3 = QualityGate(b * 4, b * 4, gate_mode)
 
             self.fuse1 = DoubleConv(b * 3, c)
             self.fuse2 = DoubleConv(b * 6, c * 2)
@@ -215,24 +247,48 @@ def _build_quality_gated_fusion(base_channels: int, branch_channels: int):
         def forward(self, x, return_gate_maps: bool = False):
             if x.ndim != 4 or x.shape[1] != 10:
                 raise ValueError(
-                    "quality_gated_fusion expects input shaped [N, 10, H, W]"
+                    f"{self.architecture} expects input shaped [N, 10, H, W]"
                 )
 
             quality_before = x[:, 8:9].clamp(0.0, 1.0)
             quality_after = x[:, 9:10].clamp(0.0, 1.0)
-            # Sanitization prevents explicitly unavailable optical values from
-            # entering the feature extractor; multi-scale gates then enforce
-            # the same availability boundary after spatial aggregation.
-            s2_before = x[:, 0:3] * quality_before
-            s2_after = x[:, 3:6] * quality_after
+            raw_s2_before = x[:, 0:3]
+            raw_s2_after = x[:, 3:6]
+            if self.gate_mode == "hard":
+                # Hard sanitization treats the supplied map as oracle.
+                s2_before = raw_s2_before * quality_before
+                s2_after = raw_s2_after * quality_after
+            else:
+                # Retaining optical content lets the learned correction
+                # respond to both false-available and false-unavailable maps.
+                s2_before = raw_s2_before
+                s2_after = raw_s2_after
+            before_present = (
+                (raw_s2_before.abs().amax(dim=(1, 2, 3), keepdim=True) > 0)
+                | (quality_before.amax(dim=(1, 2, 3), keepdim=True) > 0)
+            ).to(x.dtype)
+            after_present = (
+                (raw_s2_after.abs().amax(dim=(1, 2, 3), keepdim=True) > 0)
+                | (quality_after.amax(dim=(1, 2, 3), keepdim=True) > 0)
+            ).to(x.dtype)
             s1 = x[:, 6:8]
 
             radar1 = self.s1_enc1(s1)
             before1, after1 = self._shared_temporal(
                 self.s2_enc1, s2_before, s2_after
             )
-            pre_gate1 = self.pre_gate1(radar1, before1, quality_before)
-            post_gate1 = self.post_gate1(radar1, after1, quality_after)
+            pre_gate1 = self.pre_gate1(
+                radar1,
+                before1,
+                quality_before,
+                before_present,
+            )
+            post_gate1 = self.post_gate1(
+                radar1,
+                after1,
+                quality_after,
+                after_present,
+            )
             fused1 = self._fuse(
                 radar1,
                 before1,
@@ -246,8 +302,18 @@ def _build_quality_gated_fusion(base_channels: int, branch_channels: int):
             before2, after2 = self._shared_temporal(
                 self.s2_enc2, self.pool(before1), self.pool(after1)
             )
-            pre_gate2 = self.pre_gate2(radar2, before2, quality_before)
-            post_gate2 = self.post_gate2(radar2, after2, quality_after)
+            pre_gate2 = self.pre_gate2(
+                radar2,
+                before2,
+                quality_before,
+                before_present,
+            )
+            post_gate2 = self.post_gate2(
+                radar2,
+                after2,
+                quality_after,
+                after_present,
+            )
             fused2 = self._fuse(
                 radar2,
                 before2,
@@ -261,8 +327,18 @@ def _build_quality_gated_fusion(base_channels: int, branch_channels: int):
             before3, after3 = self._shared_temporal(
                 self.s2_enc3, self.pool(before2), self.pool(after2)
             )
-            pre_gate3 = self.pre_gate3(radar3, before3, quality_before)
-            post_gate3 = self.post_gate3(radar3, after3, quality_after)
+            pre_gate3 = self.pre_gate3(
+                radar3,
+                before3,
+                quality_before,
+                before_present,
+            )
+            post_gate3 = self.post_gate3(
+                radar3,
+                after3,
+                quality_after,
+                after_present,
+            )
             fused3 = self._fuse(
                 radar3,
                 before3,

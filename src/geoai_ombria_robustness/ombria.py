@@ -7,6 +7,11 @@ from typing import Iterable, Optional
 import numpy as np
 from PIL import Image
 
+from .quality_maps import (
+    QualityMapConfusion,
+    perturb_quality_map,
+)
+
 
 VARIANTS = (
     "s1_after",
@@ -160,6 +165,62 @@ class S2Degradation:
     before: np.ndarray
     after: np.ndarray
     quality: np.ndarray
+
+
+@dataclass(frozen=True)
+class OmbriaQualityUncertaintySample:
+    image: np.ndarray
+    target: np.ndarray
+    reference_quality: np.ndarray
+    observed_quality: np.ndarray
+    quality_confusion: QualityMapConfusion
+
+
+def load_multimodal_quality_uncertainty_sample(
+    sample: OmbriaSample,
+    degrade_s2: str,
+    degradation_rng: np.random.Generator,
+    quality_rng: np.random.Generator,
+    false_available_rate: float,
+    false_unavailable_rate: float,
+) -> OmbriaQualityUncertaintySample:
+    """Load OMBRIA with independent content and quality-map perturbations."""
+
+    s1_before = read_image(sample.s1_before, "L")
+    s1_after = read_image(sample.s1_after, "L")
+    s2_before = read_image(sample.s2_before, "RGB")
+    s2_after = read_image(sample.s2_after, "RGB")
+    degradation = degrade_s2_pair_with_quality(
+        s2_before,
+        s2_after,
+        degrade_s2,
+        degradation_rng,
+    )
+    reference_quality = degradation.quality >= 0.5
+    perturbed = perturb_quality_map(
+        reference_quality,
+        false_available_rate=false_available_rate,
+        false_unavailable_rate=false_unavailable_rate,
+        rng=quality_rng,
+    )
+    observed_quality = perturbed.observed.astype(np.float32)
+    image = np.concatenate(
+        [
+            degradation.before,
+            degradation.after,
+            s1_before,
+            s1_after,
+            observed_quality,
+        ],
+        axis=2,
+    ).astype(np.float32)
+    return OmbriaQualityUncertaintySample(
+        image=image,
+        target=read_mask(sample.s2_mask),
+        reference_quality=reference_quality,
+        observed_quality=perturbed.observed,
+        quality_confusion=perturbed.confusion,
+    )
 
 
 def _quality_channels(

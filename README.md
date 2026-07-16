@@ -6,9 +6,33 @@ Reproducible code for the manuscript:
 
 The project tests how multitemporal Sentinel-1/Sentinel-2 flood segmentation changes when the Sentinel-2 stream is clean, synthetically occluded, noisy, or zero-filled to simulate absence. It is an OMBRIA-only controlled stress test, not evidence of observed-cloud robustness, operational deployment, state-of-the-art performance, or universal generalization.
 
-## v0.3 prospective method follow-up
+## Current scientific reset: quality-map uncertainty
 
-v0.3 turns the v0.2 diagnostic into a falsifiable method study. The proposed Quality-Gated Sensor-State Fusion (QGSF) architecture uses separate S1 and shared bitemporal S2 encoders, sanitizes unavailable optical inputs, and applies hard availability-constrained learned gates at three scales. When both S2 quality maps are zero, every optical term supplied to fusion is exactly zero and the network follows its S1 path.
+The current work no longer presents QGSF as the main method innovation. The v0.3 Full run did not show a reproducible advantage over aligned quality concatenation, and the published SMAGNet study now substantially overlaps the original spatial-mask/gated-fusion framing.
+
+The new experiment separates two variables that oracle-mask studies conflate:
+
+- the reference availability map used to degrade optical content;
+- the imperfect quality map supplied to the fusion model.
+
+It measures false-available and false-unavailable errors independently and reports fusion performance relative to an explicit S1-only reference. OMBRIA provides the controlled discovery surface. A pinned Sen1Floods11 manifest maps all 446 hand-labeled chips to Sentinel-2 L2A SCL assets for an external geospatial quality-proxy workflow. SCL remains an operational proxy, not human cloud truth.
+
+Run the new Smoke notebook first:
+
+- [`notebooks/kaggle_quality_uncertainty_smoke.ipynb`](notebooks/kaggle_quality_uncertainty_smoke.ipynb)
+- [`manifests/sen1floods11_scl_manifest.json`](manifests/sen1floods11_scl_manifest.json)
+
+The Smoke trains one seed for two epochs, evaluates a 3 × 3 quality-error grid, verifies Earth Search and Planetary Computer SCL access, and returns:
+
+```text
+results/ombria_quality_uncertainty_smoke_artifacts.zip
+```
+
+Smoke scores validate execution only and cannot enter the manuscript.
+
+## v0.3 completed pilot
+
+v0.3 tested a falsifiable QGSF method candidate. The architecture uses separate S1 and shared bitemporal S2 encoders, sanitizes unavailable optical inputs, and applies hard availability-constrained learned gates at three scales. When both S2 quality maps are zero, every optical term supplied to fusion is exactly zero and the network follows its S1-driven path.
 
 The Full matrix compares:
 
@@ -18,7 +42,7 @@ The Full matrix compares:
 - the same QGSF architecture with prevalence-preserving shifted quality maps;
 - S1-only and S2-only references.
 
-The architecture, matched controls, paired contrasts, and decision thresholds are frozen in [`docs/QUALITY_GATED_FUSION_V3_PROTOCOL.md`](docs/QUALITY_GATED_FUSION_V3_PROTOCOL.md). This is a prospective method candidate: the repository does not claim it works until the Full artifact passes those gates.
+The architecture, matched controls, paired contrasts, and decision thresholds are frozen in [`docs/QUALITY_GATED_FUSION_V3_PROTOCOL.md`](docs/QUALITY_GATED_FUSION_V3_PROTOCOL.md). The completed Full result did not support architectural superiority, so v0.3 is retained as audited pilot evidence rather than the current submission claim.
 
 ## Released v0.1.5 evidence
 
@@ -58,9 +82,15 @@ Cloud-like occlusion is synthetic. Zero filling simulates input absence without 
 
 ## Kaggle click-to-run workflow
 
-The current method entrypoints are `notebooks/kaggle_quality_gated_v3_smoke.ipynb` and `notebooks/kaggle_quality_gated_v3_full.ipynb`. Both clone the pinned `v0.3.1-quality-gated` tag, verify a real CUDA convolution, run the tests, execute the frozen protocol, verify every packaged file hash (including the decision gate), and expose the result archive.
+The current entrypoint is `notebooks/kaggle_quality_uncertainty_smoke.ipynb`. It verifies a real CUDA convolution, runs the tests, executes the two-mask Smoke protocol, checks both SCL providers, verifies the packaged file hashes, and exposes the result archive.
 
-Run Smoke first. It uses one seed, two epochs, and four core routes only; its scores are pipeline checks and cannot enter the manuscript. Run Full in a fresh Kaggle session only after the Smoke archive is reviewed.
+```bash
+bash scripts/run_quality_uncertainty_smoke.sh
+```
+
+The v0.3 historical entrypoints remain `notebooks/kaggle_quality_gated_v3_smoke.ipynb` and `notebooks/kaggle_quality_gated_v3_full.ipynb`. Both clone the pinned `v0.3.1-quality-gated` tag and reproduce the completed pilot.
+
+For historical v0.3 reproduction, its Smoke uses one seed, two epochs, and four core routes only. Run that Full workflow only when reproducing the completed pilot; it is not the current experiment.
 
 ```bash
 MODE=smoke bash scripts/run_quality_gated_v3_matrix.sh

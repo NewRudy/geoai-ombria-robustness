@@ -71,6 +71,30 @@ class QualityGatedFusionTests(unittest.TestCase):
         for gate in (*gates["before"], *gates["after"]):
             torch.testing.assert_close(gate, torch.full_like(gate, expected))
 
+    def test_soft_quality_prior_can_recover_from_false_unavailable_map(self) -> None:
+        torch = self.torch
+        torch.manual_seed(29)
+        model = build_model(10, 8, "soft_quality_prior_fusion").eval()
+        first = torch.rand(1, 10, 64, 64)
+        first[:, 8:10] = 0.0
+        second = first.clone()
+        second[:, 0:6] = torch.rand_like(second[:, 0:6])
+        with torch.no_grad():
+            first_logits = model(first)
+            second_logits = model(second)
+        self.assertFalse(torch.equal(first_logits, second_logits))
+
+    def test_soft_quality_prior_preserves_complete_absence_boundary(self) -> None:
+        torch = self.torch
+        model = build_model(10, 8, "soft_quality_prior_fusion").eval()
+        inputs = torch.rand(1, 10, 64, 64)
+        inputs[:, 0:6] = 0.0
+        inputs[:, 8:10] = 0.0
+        with torch.no_grad():
+            _, gates = model(inputs, return_gate_maps=True)
+        for gate in (*gates["before"], *gates["after"]):
+            self.assertTrue(torch.all(gate == 0.0))
+
     def test_default_width_is_capacity_controlled(self) -> None:
         baseline = build_model(10, 16, "early_fusion_unet")
         proposed = build_model(10, 16, "quality_gated_fusion")
