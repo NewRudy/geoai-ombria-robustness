@@ -47,9 +47,31 @@ quality_map_uncertainty_full_seed7_artifacts.zip
 Each seed shard contains the full OMBRIA 5 x 5 surface, the full 446-chip
 Sen1Floods11/SCL experiment, three perturbation repetitions, checkpoints, raw
 counts, per-chip/per-event rows, and file hashes. A passing seed shard remains
-scientifically incomplete. Seeds `13`, `21`, `29`, and `37` are released after
-the seed-7 runtime and artifact audit confirm that the operational split fits
-Kaggle reliably.
+scientifically incomplete.
+
+## Seed-7 audit result and released notebooks
+
+The returned seed-7 artifact passed all 11 local release-audit sections. Its
+authorized SHA-256 is:
+
+```text
+9aa4b4c7f752fc684a304fbc6138242d3931f54527e089379d8759bae2990e8e
+```
+
+Run the remaining frozen shards one at a time, each in a fresh Kaggle GPU
+session, using exactly these notebooks and returning the correspondingly named
+ZIP:
+
+| Seed | Notebook | Return artifact |
+|---:|---|---|
+| 13 | `notebooks/kaggle_quality_uncertainty_full_seed13.ipynb` | `quality_map_uncertainty_full_seed13_artifacts.zip` |
+| 21 | `notebooks/kaggle_quality_uncertainty_full_seed21.ipynb` | `quality_map_uncertainty_full_seed21_artifacts.zip` |
+| 29 | `notebooks/kaggle_quality_uncertainty_full_seed29.ipynb` | `quality_map_uncertainty_full_seed29_artifacts.zip` |
+| 37 | `notebooks/kaggle_quality_uncertainty_full_seed37.ipynb` | `quality_map_uncertainty_full_seed37_artifacts.zip` |
+
+Do not edit source commit, routes, epochs, rates, repetitions, datasets, or
+checkpoint rules. If a shard fails, return its final traceback rather than
+reducing the protocol.
 
 ## Full interpretation hold
 

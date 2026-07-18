@@ -1,0 +1,51 @@
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
+
+from geoai_ombria_robustness.quality_uncertainty_full_audit import (  # noqa: E402
+    audit_quality_uncertainty_full_shard_artifact,
+    render_quality_uncertainty_full_shard_audit_markdown,
+)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Audit one returned quality-map uncertainty Full seed shard."
+    )
+    parser.add_argument("archive", type=Path)
+    parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument("--code-root", type=Path)
+    parser.add_argument("--json-out", type=Path, required=True)
+    parser.add_argument("--markdown-out", type=Path, required=True)
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    report = audit_quality_uncertainty_full_shard_artifact(
+        args.archive,
+        seed=args.seed,
+        code_root=args.code_root,
+    )
+    args.json_out.parent.mkdir(parents=True, exist_ok=True)
+    args.markdown_out.parent.mkdir(parents=True, exist_ok=True)
+    args.json_out.write_text(
+        json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    args.markdown_out.write_text(
+        render_quality_uncertainty_full_shard_audit_markdown(report),
+        encoding="utf-8",
+    )
+    print(json.dumps(report["decision"], indent=2, ensure_ascii=False))
+    if not report["decision"]["remaining_core_seeds_authorized"]:
+        raise SystemExit(2)
+
+
+if __name__ == "__main__":
+    main()

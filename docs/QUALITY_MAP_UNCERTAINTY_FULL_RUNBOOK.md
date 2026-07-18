@@ -1,6 +1,26 @@
 # Quality-Map Uncertainty Full Runbook
 
-Status: seed-sharded execution plan frozen before the first Full outcome
+Status: seed-7 release audit passed; remaining frozen core seeds released
+
+## Seed-7 release audit
+
+The returned `quality_map_uncertainty_full_seed7_artifacts.zip` passed the
+independent local release audit on 2026-07-18. Its authorized SHA-256 is:
+
+```text
+9aa4b4c7f752fc684a304fbc6138242d3931f54527e089379d8759bae2990e8e
+```
+
+The audit verified all 476 manifest records and their hashes, the frozen source
+commit and runtime, all eight external and five OMBRIA training runs, the full
+446-chip external manifest, 86,625 external per-chip rows, 1,650 external raw
+summaries, 301 OMBRIA raw summaries, matched controls, zero-valid-label handling,
+resume provenance, and current-versus-prior logs. All 11 audit sections passed.
+
+This result releases seeds `13`, `21`, `29`, and `37` with no protocol changes.
+It does **not** release seed-7 scores for manuscript use: all five core seeds,
+the separate published-architecture gate, merge audit, paired uncertainty, and
+Article decision gates remain required.
 
 ## Pre-score evaluator correction
 
@@ -60,8 +80,8 @@ interpretation.
    `quality_map_uncertainty_full_seed7_artifacts.zip`.
 2. Audit runtime, hashes, coverage, matched controls, convergence, and output
    size locally.
-3. If seed `7` passes and fits the session limit, release seeds `13`, `21`,
-   `29`, and `37` without protocol changes.
+3. Seed `7` passed the release audit; run seeds `13`, `21`, `29`, and `37`
+   without protocol changes using their supplied immutable notebooks.
 4. Run the separate official-architecture SMAGNet adaptation shard or record
    its prespecified reproducibility failure before inspecting merged claims.
 5. Merge only complete, disjoint seed shards; recompute all summaries from raw
