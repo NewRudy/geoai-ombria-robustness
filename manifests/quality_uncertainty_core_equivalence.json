@@ -1,0 +1,19 @@
+{
+  "schema": "geoai-quality-map-uncertainty-core-equivalence-v1",
+  "smoke_source_commit": "3e97f93bdea999e1781869b74842a88050f9bdb1",
+  "status": "pass",
+  "boundary": "Full adds fail-closed audit and seed-shard orchestration; the listed data, perturbation, model, training, and evaluation implementations are byte-identical to the audited Smoke source.",
+  "files": {
+    "scripts/evaluate_ombria_quality_uncertainty.py": "d831b3fdf68afa6570ec655dc198460c444bdee6f671d0e0cb1df3221cc4495e",
+    "scripts/evaluate_sen1floods11_quality_uncertainty.py": "9f4e83a3a9be6f9b779623d805e26a8e859a08c7856409ce1c0ae33c33ca96f6",
+    "scripts/prepare_sen1floods11_experiment.py": "c4a162f6ca2847107292fb7d397b90f0e988e20cd2b2e81c9955fab24855bd04",
+    "scripts/train_ombria_unet.py": "7e770b85347776929703528fa31f8f07207009bc508e61039e1d8b26af872321",
+    "scripts/train_sen1floods11_unet.py": "615890f8e2344fecf282667ddd2476b1459df766bc95f4433ac3bb4aa5a4c4ed",
+    "src/geoai_ombria_robustness/ombria.py": "529a8a847e468dd4a229c446f67bfbafbbead9fb8246922031052f450fb360ae",
+    "src/geoai_ombria_robustness/quality_maps.py": "82ee6cfe707391ccf3e3b6a4de72d39430a8a5fd360cb0f2c0dc2e84887ff9e0",
+    "src/geoai_ombria_robustness/quality_uncertainty_evidence.py": "c61906323540fdc99f66925be7bd107dbd63ac96ab5dc65f3d7a7c0552c526fb",
+    "src/geoai_ombria_robustness/sen1floods11.py": "8f150b0fdbf7f033006d3c625d9f114763570f88e226b121c1e4e9ad98ccfc57",
+    "src/geoai_ombria_robustness/sen1floods11_protocol.py": "3cc92b19099a645d05d3727b45675e5d16effa225f4a52442c296376edfa48cf",
+    "src/geoai_ombria_robustness/single_time_models.py": "8019538f2f67e6ca65eab91b32c34ba46878feb3b3b197a8d7cbce0e41d5cc22"
+  }
+}

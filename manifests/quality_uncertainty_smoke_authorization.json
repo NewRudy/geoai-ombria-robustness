@@ -1,0 +1,19 @@
+{
+  "schema": "geoai-quality-map-uncertainty-smoke-authorization-v1",
+  "status": "pass",
+  "artifact": {
+    "filename": "quality_map_uncertainty_smoke_artifacts.zip",
+    "bytes": 64382817,
+    "members": 282,
+    "sha256": "32ebcd1d8bfa5cadcf9b007985548ae7d03b9ecb1015ea41b92e93b12b47e67e"
+  },
+  "source_commit": "3e97f93bdea999e1781869b74842a88050f9bdb1",
+  "audit": {
+    "automated_checks_passed": 13,
+    "automated_checks_failed": 0,
+    "alignment_visual_review": "pass",
+    "full_authorized": true
+  },
+  "scientific_interpretation_allowed": false,
+  "claim_boundary": "Smoke validates execution and packaging only; its scores are prohibited from manuscript claims."
+}

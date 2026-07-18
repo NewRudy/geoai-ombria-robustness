@@ -129,6 +129,23 @@ The Full notebook is released to the operator only after the Smoke archive is
 audited. No route, rate, seed, split, or checkpoint rule may be changed after
 Full outcome inspection.
 
+### Operational Full sharding
+
+The returned Smoke archive passed local audit before any Full outcome was
+generated. Its frozen fingerprint is
+`32ebcd1d8bfa5cadcf9b007985548ae7d03b9ecb1015ea41b92e93b12b47e67e`.
+The 14 passing gates covered ZIP and file hashes, source/runtime identity,
+training and evaluation coverage, confusion-count reconstruction, paired
+structured controls, logs, and human review of the 11-event alignment panel.
+
+Smoke throughput shows that the unchanged Full matrix should not be placed in
+one failure-prone Kaggle session. Full is therefore operationally divided into
+five model-seed shards (`7`, `13`, `21`, `29`, and `37`). This is only a
+resumption and packaging decision: every shard uses all 446 selected records,
+all routes, all conditions, and the same checkpoint rule. A shard is explicitly
+marked scientifically uninterpretable until all five shards, the published
+SMAGNet comparison gate, and the post-run merge audit pass.
+
 ## Primary estimands
 
 - Flood IoU is primary; F1, precision, and recall are secondary.

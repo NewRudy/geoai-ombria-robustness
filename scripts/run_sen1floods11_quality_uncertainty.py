@@ -20,6 +20,7 @@ from geoai_ombria_robustness.quality_uncertainty_evidence import (  # noqa: E402
 from geoai_ombria_robustness.quality_uncertainty_experiment import (  # noqa: E402
     build_experiment_plan,
     evaluation_conditions_for_route,
+    resolve_active_seeds,
 )
 
 
@@ -42,6 +43,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--result-root", type=Path, required=True)
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument(
+        "--seeds",
+        type=int,
+        nargs="+",
+        default=None,
+        help=(
+            "Optional resumable subset of the frozen model seeds. The final "
+            "scientific gate still requires every seed in the Full plan."
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -183,6 +194,7 @@ def main() -> None:
     if args.workers < 1:
         raise ValueError("workers must be positive")
     plan = build_experiment_plan(args.mode)
+    active_seeds = resolve_active_seeds(plan, args.seeds)
     result_root = args.result_root.resolve()
     data_root = args.data_root.resolve()
     source_manifest = args.source_manifest.resolve()
@@ -196,6 +208,9 @@ def main() -> None:
 
     plan_document = {
         **plan.to_dict(),
+        "planned_seeds": list(plan.seeds),
+        "active_seeds": list(active_seeds),
+        "shard_id": "seeds-" + "-".join(str(seed) for seed in active_seeds),
         "source_commit": current_source_commit(),
         "source_manifest": str(source_manifest),
         "source_manifest_sha256": file_sha256(source_manifest),
@@ -203,7 +218,11 @@ def main() -> None:
             "repository": "https://github.com/ASUcicilab/SMAGNet",
             "commit": "4371df08e6ca3b9d71c0385ad57b589830469a0c",
             "license": "MIT",
-            "status": "required_full_feasibility_gate_not_executed_by_smoke",
+            "status": (
+                "required_full_feasibility_gate_not_executed_by_smoke"
+                if plan.pipeline_only
+                else "separate_published_architecture_shard_required"
+            ),
         },
     }
     write_json_atomic(result_root / "experiment_plan.json", plan_document)
@@ -251,7 +270,7 @@ def main() -> None:
     for route in plan.routes:
         conditions = evaluation_conditions_for_route(plan, route)
         conditions_path = condition_paths[route]
-        for seed in plan.seeds:
+        for seed in active_seeds:
             run_name = f"{route}_seed{seed}"
             run_dir = runs_dir / run_name
             expected_config = {
@@ -343,10 +362,11 @@ def main() -> None:
     raw_rows = read_summary_rows(evaluations_dir)
     seed_rows = summarize_seed_conditions(raw_rows)
     write_csv(tables_dir / "sen1floods11_seed_condition_summary.csv", seed_rows)
-    expected_runs = len(plan.routes) * len(plan.seeds)
+    expected_runs = len(plan.routes) * len(active_seeds)
+    expected_planned_runs = len(plan.routes) * len(plan.seeds)
     expected_seed_conditions = (
         sum(len(evaluation_conditions_for_route(plan, route)) for route in plan.routes)
-        * len(plan.seeds)
+        * len(active_seeds)
         * len(plan.evaluation_splits)
     )
     complete_training_runs = sum(
@@ -362,7 +382,7 @@ def main() -> None:
             },
         )
         for route in plan.routes
-        for seed in plan.seeds
+        for seed in active_seeds
     )
     preparation = json.loads(preparation_report.read_text(encoding="utf-8"))
     selected = json.loads(selected_manifest.read_text(encoding="utf-8"))
@@ -392,16 +412,30 @@ def main() -> None:
         "scientific_interpretation_allowed": False,
         "post_run_scientific_audit_required": True,
         "expected_training_runs": expected_runs,
+        "expected_planned_training_runs": expected_planned_runs,
         "complete_training_runs": complete_training_runs,
         "preparation_pass": preparation_pass,
         "expected_seed_condition_rows": expected_seed_conditions,
         "seed_condition_rows": len(seed_rows),
         "finite_primary_metrics": finite,
+        "planned_seeds": list(plan.seeds),
+        "active_seeds": list(active_seeds),
+        "shard_complete": (
+            len(seed_rows) == expected_seed_conditions
+            and finite
+            and complete_training_runs == expected_runs
+            and preparation_pass
+        ),
+        "all_full_seeds_present": active_seeds == plan.seeds,
         "claim_boundary": (
             "A passing Smoke gate validates execution and packaging only; "
             "its scores are prohibited from manuscript claims."
             if plan.pipeline_only
-            else "Full completeness does not itself establish a scientific claim."
+            else (
+                "A Full seed shard is incomplete scientific evidence until all "
+                "five frozen seeds, the published baseline gate, and the "
+                "post-run scientific audit pass."
+            )
         ),
     }
     write_json_atomic(result_root / "sen1floods11_decision_gate.json", gate)

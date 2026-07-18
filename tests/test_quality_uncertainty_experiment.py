@@ -12,6 +12,7 @@ from geoai_ombria_robustness.quality_uncertainty_experiment import (
     build_selected_manifest,
     build_experiment_plan,
     evaluation_conditions_for_route,
+    resolve_active_seeds,
     select_split_records,
 )
 
@@ -50,6 +51,16 @@ class QualityUncertaintyExperimentTests(unittest.TestCase):
         self.assertEqual(len(plan.independent_conditions), 25)
         self.assertEqual(plan.sample_limits, {})
         self.assertEqual(plan.perturbation_repetitions, 3)
+
+    def test_full_seed_shard_is_a_frozen_subset_not_a_new_protocol(self) -> None:
+        plan = build_experiment_plan("full")
+
+        self.assertEqual(resolve_active_seeds(plan, [21, 7]), (7, 21))
+        self.assertEqual(resolve_active_seeds(plan, None), plan.seeds)
+        with self.assertRaisesRegex(ValueError, "frozen Full plan"):
+            resolve_active_seeds(plan, [999])
+        with self.assertRaisesRegex(ValueError, "at least one"):
+            resolve_active_seeds(plan, [])
 
     def test_split_selection_is_order_independent_and_event_stratified(self) -> None:
         records = [

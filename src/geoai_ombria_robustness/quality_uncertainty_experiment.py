@@ -199,6 +199,26 @@ def build_experiment_plan(mode: str) -> ExperimentPlan:
     raise ValueError("mode must be 'smoke' or 'full'")
 
 
+def resolve_active_seeds(
+    plan: ExperimentPlan,
+    requested: Iterable[int] | None,
+) -> tuple[int, ...]:
+    """Resolve one resumable shard without changing the frozen seed plan."""
+
+    if requested is None:
+        return plan.seeds
+    requested_values = {int(seed) for seed in requested}
+    if not requested_values:
+        raise ValueError("A seed shard must contain at least one seed")
+    unknown = requested_values - set(plan.seeds)
+    if unknown:
+        raise ValueError(
+            "Seed shard is outside the frozen Full plan: "
+            + ", ".join(str(seed) for seed in sorted(unknown))
+        )
+    return tuple(seed for seed in plan.seeds if seed in requested_values)
+
+
 def _selection_score(record: dict[str, Any], split: str, event: str) -> str:
     token = (f"{SELECTION_SALT}:{split}:{event}:{record['chip_id']}").encode("utf-8")
     return hashlib.sha256(token).hexdigest()
