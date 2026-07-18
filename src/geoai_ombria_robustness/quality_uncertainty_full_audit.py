@@ -1137,8 +1137,8 @@ def render_quality_uncertainty_full_shard_audit_markdown(
             "",
             decision["claim_boundary"],
             "",
-            "Seed-7 score previews in the JSON detail are execution-health "
-            "checks only; "
+            f"Seed-{report['seed']} score previews in the JSON detail are "
+            "execution-health checks only; "
             "they are not manuscript evidence and must not be quoted as results.",
             "",
         ]

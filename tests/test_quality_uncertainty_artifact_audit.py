@@ -9,9 +9,34 @@ from zipfile import ZipFile
 from geoai_ombria_robustness.quality_uncertainty_artifact_audit import (
     audit_quality_uncertainty_smoke_artifact,
 )
+from geoai_ombria_robustness.quality_uncertainty_full_audit import (
+    render_quality_uncertainty_full_shard_audit_markdown,
+)
 
 
 class QualityUncertaintyArtifactAuditTests(unittest.TestCase):
+    def test_full_audit_markdown_uses_active_seed_label(self) -> None:
+        report = {
+            "artifact": {
+                "path": "/tmp/seed13.zip",
+                "sha256": "0" * 64,
+                "bytes": 1,
+                "members": 1,
+            },
+            "seed": 13,
+            "checks": [],
+            "decision": {
+                "status": "pass",
+                "remaining_core_seeds_authorized": True,
+                "claim_boundary": "QC only.",
+            },
+        }
+
+        rendered = render_quality_uncertainty_full_shard_audit_markdown(report)
+
+        self.assertIn("Seed-13 score previews", rendered)
+        self.assertNotIn("Seed-7 score previews", rendered)
+
     def test_unsafe_archive_member_blocks_full_authorization(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             archive_path = Path(temporary) / "unsafe.zip"
