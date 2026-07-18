@@ -1,5 +1,7 @@
 # Kaggle Operator Guide
 
+> Current workflow: use [`QUALITY_MAP_UNCERTAINTY_KAGGLE.md`](QUALITY_MAP_UNCERTAINTY_KAGGLE.md). The sections below reproduce historical v0.3 and v0.2 experiments and are not the current Article experiment.
+
 ## v0.3 quality-gated method follow-up
 
 Use `notebooks/kaggle_quality_gated_v3_smoke.ipynb` first. It clones the pinned `v0.3.1-quality-gated` tag, verifies CUDA with a real convolution, runs all repository tests, trains the four core method/control routes for two epochs, evaluates the fixed sensor states, checks the prespecified-contrast exporter, and verifies the returned archive including its packaged decision gate.

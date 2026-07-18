@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -29,10 +30,12 @@ class Sen1Floods11Chip:
     target: np.ndarray
     valid_target: np.ndarray
     reference_quality: np.ndarray
+    optical_valid: np.ndarray
     scl: np.ndarray
 
 
 _SAS_CACHE: dict[tuple[str, str], tuple[str, datetime]] = {}
+QUALITY_CACHE_SCHEMA = "sen1floods11-scl-s2-valid-v2"
 
 
 def load_sen1floods11_manifest(path: Path) -> dict[str, Any]:
@@ -70,27 +73,38 @@ def local_paths(root: Path, record: dict[str, Any]) -> Sen1Floods11LocalPaths:
     )
 
 
-def _download(url: str, destination: Path) -> None:
+def _download(
+    url: str,
+    destination: Path,
+    attempts: int = 5,
+    backoff_seconds: float = 1.0,
+) -> None:
     if destination.is_file() and destination.stat().st_size > 0:
         return
+    if attempts < 1:
+        raise ValueError("attempts must be positive")
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(destination.suffix + ".part")
-    request = urllib.request.Request(
-        url,
-        headers={"User-Agent": "geoai-ombria-robustness/0.4"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=180.0) as response:
-            with temporary.open("wb") as output:
-                while True:
-                    block = response.read(1024 * 1024)
-                    if not block:
-                        break
-                    output.write(block)
-        os.replace(temporary, destination)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
+    for attempt in range(attempts):
+        request = urllib.request.Request(
+            url,
+            headers={"User-Agent": "geoai-ombria-robustness/0.4"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=180.0) as response:
+                with temporary.open("wb") as output:
+                    while True:
+                        block = response.read(1024 * 1024)
+                        if not block:
+                            break
+                        output.write(block)
+            os.replace(temporary, destination)
+            return
+        except OSError:
+            temporary.unlink(missing_ok=True)
+            if attempt + 1 == attempts:
+                raise
+            time.sleep(backoff_seconds * (2**attempt))
 
 
 def download_hand_labeled_assets(
@@ -135,9 +149,7 @@ def _planetary_computer_token(href: str) -> str:
     with urllib.request.urlopen(request, timeout=60.0) as response:
         document = json.load(response)
     token = str(document["token"])
-    expiry = datetime.fromisoformat(
-        str(document["msft:expiry"]).replace("Z", "+00:00")
-    )
+    expiry = datetime.fromisoformat(str(document["msft:expiry"]).replace("Z", "+00:00"))
     _SAS_CACHE[key] = (token, expiry)
     return token
 
@@ -148,6 +160,25 @@ def resolve_scl_href(asset: dict[str, Any]) -> str:
         return href
     separator = "&" if "?" in href else "?"
     return f"{href}{separator}{_planetary_computer_token(href)}"
+
+
+def _write_quality_cache(
+    output_path: Path,
+    scl: np.ndarray,
+    quality: np.ndarray,
+    optical_valid: np.ndarray,
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output_path.with_suffix(output_path.suffix + ".part")
+    with temporary.open("wb") as output:
+        np.savez_compressed(
+            output,
+            schema=np.array(QUALITY_CACHE_SCHEMA),
+            scl=scl,
+            quality=quality.astype(np.uint8),
+            optical_valid=optical_valid.astype(np.uint8),
+        )
+    os.replace(temporary, output_path)
 
 
 def build_scl_reference_quality(
@@ -172,6 +203,7 @@ def build_scl_reference_quality(
             target_shape = (target.height, target.width)
             target_crs = target.crs
             target_transform = target.transform
+            optical_valid = target.dataset_mask() > 0
 
         scl = np.zeros(target_shape, dtype=np.uint8)
         for asset in record["scl_assets"]:
@@ -189,22 +221,30 @@ def build_scl_reference_quality(
                     dst_nodata=0,
                     resampling=Resampling.nearest,
                 )
-            scl[(scl == 0) & (warped != 0)] = warped[
-                (scl == 0) & (warped != 0)
-            ]
+            scl[(scl == 0) & (warped != 0)] = warped[(scl == 0) & (warped != 0)]
 
-    quality = ~np.isin(scl, SCL_UNAVAILABLE_CLASSES)
+    quality = scl_reference_quality(scl, optical_valid)
     if output_path is not None:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = output_path.with_suffix(output_path.suffix + ".part")
-        with temporary.open("wb") as output:
-            np.savez_compressed(
-                output,
-                scl=scl,
-                quality=quality.astype(np.uint8),
-            )
-        os.replace(temporary, output_path)
+        _write_quality_cache(
+            output_path,
+            scl,
+            quality,
+            optical_valid,
+        )
     return scl, quality
+
+
+def scl_reference_quality(
+    scl: np.ndarray,
+    optical_valid: np.ndarray,
+) -> np.ndarray:
+    """Combine SCL semantics with the official chip's own nodata mask."""
+
+    scl = np.asarray(scl)
+    optical_valid = np.asarray(optical_valid, dtype=bool)
+    if scl.shape != optical_valid.shape:
+        raise ValueError("SCL and optical-valid masks must have equal shapes")
+    return (~np.isin(scl, SCL_UNAVAILABLE_CLASSES)) & optical_valid
 
 
 def normalize_sentinel1(s1: np.ndarray) -> np.ndarray:
@@ -237,14 +277,36 @@ def load_hand_labeled_chip(
     with rasterio.open(paths.s2) as source:
         # B2, B3, B4, and B8 in the official 13-band ordering.
         s2 = normalize_sentinel2(source.read([2, 3, 4, 8]))
+        optical_valid = source.dataset_mask() > 0
     with rasterio.open(paths.label) as source:
         label = source.read(1)
 
+    cache_valid = False
+    upgrade_cache = False
     if paths.quality.exists():
         with np.load(paths.quality) as quality_file:
-            scl = quality_file["scl"].astype(np.uint8)
-            quality = quality_file["quality"].astype(bool)
-    else:
+            schema = (
+                str(quality_file["schema"].item()) if "schema" in quality_file else ""
+            )
+            if schema == QUALITY_CACHE_SCHEMA:
+                scl = quality_file["scl"].astype(np.uint8)
+                quality = quality_file["quality"].astype(bool)
+                cached_optical_valid = quality_file["optical_valid"].astype(bool)
+                cache_valid = np.array_equal(cached_optical_valid, optical_valid)
+            elif "scl" in quality_file:
+                scl = quality_file["scl"].astype(np.uint8)
+                if scl.shape == optical_valid.shape:
+                    quality = scl_reference_quality(scl, optical_valid)
+                    cache_valid = True
+                    upgrade_cache = True
+    if upgrade_cache:
+        _write_quality_cache(
+            paths.quality,
+            scl,
+            quality,
+            optical_valid,
+        )
+    if not cache_valid:
         scl, quality = build_scl_reference_quality(
             record,
             paths.s2,
@@ -265,5 +327,6 @@ def load_hand_labeled_chip(
         target=(label == 1).astype(np.float32),
         valid_target=(label >= 0),
         reference_quality=quality,
+        optical_valid=optical_valid,
         scl=scl,
     )

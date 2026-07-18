@@ -17,15 +17,17 @@ The new experiment separates two variables that oracle-mask studies conflate:
 
 It measures false-available and false-unavailable errors independently and reports fusion performance relative to an explicit S1-only reference. OMBRIA provides the controlled discovery surface. A pinned Sen1Floods11 manifest maps all 446 hand-labeled chips to Sentinel-2 L2A SCL assets for an external geospatial quality-proxy workflow. SCL remains an operational proxy, not human cloud truth.
 
+The frozen research questions, eight capacity-controlled routes, published-baseline gate, Full matrix, and Article stop criteria are defined in [`docs/QUALITY_MAP_UNCERTAINTY_PROTOCOL.md`](docs/QUALITY_MAP_UNCERTAINTY_PROTOCOL.md).
+
 Run the new Smoke notebook first:
 
 - [`notebooks/kaggle_quality_uncertainty_smoke.ipynb`](notebooks/kaggle_quality_uncertainty_smoke.ipynb)
 - [`manifests/sen1floods11_scl_manifest.json`](manifests/sen1floods11_scl_manifest.json)
 
-The Smoke trains one seed for two epochs, evaluates a 3 × 3 quality-error grid, verifies Earth Search and Planetary Computer SCL access, and returns:
+The Smoke trains one seed for two epochs on OMBRIA and on an outcome-independent Sen1Floods11 subset. It evaluates a 3 × 3 quality-error grid, exercises all eight external routes, tests structured-versus-matched-random errors, verifies Earth Search and Planetary Computer SCL access, and packages an 11-event alignment audit. Reference quality requires both an available SCL class and a valid pixel in the official Sentinel-2 chip. Raw Sen1Floods11 rasters are cached for execution and are not redistributed. The workflow returns:
 
 ```text
-results/ombria_quality_uncertainty_smoke_artifacts.zip
+results/quality_map_uncertainty_smoke_artifacts.zip
 ```
 
 Smoke scores validate execution only and cannot enter the manuscript.
@@ -82,7 +84,7 @@ Cloud-like occlusion is synthetic. Zero filling simulates input absence without 
 
 ## Kaggle click-to-run workflow
 
-The current entrypoint is `notebooks/kaggle_quality_uncertainty_smoke.ipynb`. It verifies a real CUDA convolution, runs the tests, executes the two-mask Smoke protocol, checks both SCL providers, verifies the packaged file hashes, and exposes the result archive.
+The current entrypoint is `notebooks/kaggle_quality_uncertainty_smoke.ipynb`. It verifies a real CUDA convolution, runs the tests, executes the two-mask OMBRIA and Sen1Floods11 Smoke protocols, checks both SCL providers, verifies the external decision gate and packaged file hashes, and exposes the result archive.
 
 ```bash
 bash scripts/run_quality_uncertainty_smoke.sh

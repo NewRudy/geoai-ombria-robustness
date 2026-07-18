@@ -89,9 +89,7 @@ def quality_map_confusion(
             else 0.0
         ),
         false_unavailable_rate=(
-            float(false_unavailable.sum() / available_count)
-            if available_count
-            else 0.0
+            float(false_unavailable.sum() / available_count) if available_count else 0.0
         ),
         quality_iou=float(intersection / union) if union else 1.0,
     )
@@ -111,9 +109,7 @@ def perturb_quality_map(
     """
 
     reference = _as_bool_map(reference, "reference")
-    false_available_rate = _validate_rate(
-        false_available_rate, "false_available_rate"
-    )
+    false_available_rate = _validate_rate(false_available_rate, "false_available_rate")
     false_unavailable_rate = _validate_rate(
         false_unavailable_rate, "false_unavailable_rate"
     )
@@ -122,9 +118,7 @@ def perturb_quality_map(
     reference_flat = reference.reshape(-1)
     unavailable_indices = np.flatnonzero(~reference_flat)
     available_indices = np.flatnonzero(reference_flat)
-    false_available_count = int(
-        round(false_available_rate * unavailable_indices.size)
-    )
+    false_available_count = int(round(false_available_rate * unavailable_indices.size))
     false_unavailable_count = int(
         round(false_unavailable_rate * available_indices.size)
     )
@@ -157,32 +151,53 @@ def random_error_control(
     reference: np.ndarray,
     target_observed: np.ndarray,
     rng: np.random.Generator,
+    comparison_mask: np.ndarray | None = None,
 ) -> PerturbedQualityMap:
-    """Create a random map with the target map's exact two error counts."""
+    """Create a random map with the target map's exact two error counts.
+
+    When ``comparison_mask`` is supplied, false-available and
+    false-unavailable counts are matched independently inside and outside that
+    mask. This preserves both whole-map error counts and the counts in the
+    pixel domain used to score the downstream task.
+    """
 
     reference = _as_bool_map(reference, "reference")
     target_observed = _as_bool_map(target_observed, "target_observed")
-    target = quality_map_confusion(reference, target_observed)
+    if reference.shape != target_observed.shape:
+        raise ValueError("reference and target_observed must have equal shapes")
+    if comparison_mask is None:
+        strata = (np.ones(reference.shape, dtype=bool),)
+    else:
+        comparison_mask = _as_bool_map(comparison_mask, "comparison_mask")
+        if comparison_mask.shape != reference.shape:
+            raise ValueError("comparison_mask must match the quality-map shape")
+        strata = (comparison_mask, ~comparison_mask)
 
     observed = reference.copy().reshape(-1)
     reference_flat = reference.reshape(-1)
-    unavailable_indices = np.flatnonzero(~reference_flat)
-    available_indices = np.flatnonzero(reference_flat)
-
-    if target.false_available:
-        chosen = rng.choice(
-            unavailable_indices,
-            size=target.false_available,
-            replace=False,
-        )
-        observed[chosen] = True
-    if target.false_unavailable:
-        chosen = rng.choice(
-            available_indices,
-            size=target.false_unavailable,
-            replace=False,
-        )
-        observed[chosen] = False
+    target_flat = target_observed.reshape(-1)
+    for stratum in strata:
+        stratum_flat = stratum.reshape(-1)
+        false_available_target = stratum_flat & ~reference_flat & target_flat
+        false_unavailable_target = stratum_flat & reference_flat & ~target_flat
+        unavailable_indices = np.flatnonzero(stratum_flat & ~reference_flat)
+        available_indices = np.flatnonzero(stratum_flat & reference_flat)
+        false_available_count = int(false_available_target.sum())
+        false_unavailable_count = int(false_unavailable_target.sum())
+        if false_available_count:
+            chosen = rng.choice(
+                unavailable_indices,
+                size=false_available_count,
+                replace=False,
+            )
+            observed[chosen] = True
+        if false_unavailable_count:
+            chosen = rng.choice(
+                available_indices,
+                size=false_unavailable_count,
+                replace=False,
+            )
+            observed[chosen] = False
 
     observed = observed.reshape(reference.shape)
     return PerturbedQualityMap(
@@ -301,21 +316,21 @@ def _morph_unavailable(
 def _morph_binary(mask: np.ndarray, radius: int, operation: str) -> np.ndarray:
     padding_value = operation == "erode"
     padded = np.pad(
-        mask,
+        mask.astype(np.uint8),
         radius,
         mode="constant",
         constant_values=padding_value,
     )
-    result = np.zeros_like(mask) if operation == "dilate" else np.ones_like(mask)
+    integral = np.pad(padded, ((1, 0), (1, 0))).astype(np.int64)
+    integral = integral.cumsum(0).cumsum(1)
     height, width = mask.shape
-    for offset_y in range(2 * radius + 1):
-        for offset_x in range(2 * radius + 1):
-            view = padded[
-                offset_y : offset_y + height,
-                offset_x : offset_x + width,
-            ]
-            if operation == "dilate":
-                result |= view
-            else:
-                result &= view
-    return result
+    kernel = 2 * radius + 1
+    window_sum = (
+        integral[kernel : kernel + height, kernel : kernel + width]
+        - integral[:height, kernel : kernel + width]
+        - integral[kernel : kernel + height, :width]
+        + integral[:height, :width]
+    )
+    if operation == "dilate":
+        return window_sum > 0
+    return window_sum == kernel * kernel

@@ -5,6 +5,7 @@ ROOT=external/OMBRIA
 OMBRIA_COMMIT=38a490355f76da8ce27ed051138f03f3492a6e46
 PYTHON=$(command -v python)
 RESULT_ROOT=results/quality_uncertainty_smoke
+SEN1_ROOT=external/Sen1Floods11_quality_uncertainty
 EPOCHS=2
 BATCH_SIZE=8
 BASE_CHANNELS=16
@@ -41,8 +42,13 @@ done
 cp manifests/sen1floods11_scl_manifest.json "$RESULT_ROOT/"
 "$PYTHON" scripts/smoke_sen1floods11_scl.py \
   --manifest manifests/sen1floods11_scl_manifest.json \
-  --work-dir "$RESULT_ROOT/sen1floods11_sample" \
+  --work-dir "$SEN1_ROOT" \
   --out-json "$RESULT_ROOT/sen1floods11_scl_smoke.json"
+"$PYTHON" scripts/audit_sen1floods11_alignment.py \
+  --manifest manifests/sen1floods11_scl_manifest.json \
+  --work-dir "$SEN1_ROOT" \
+  --out-dir "$RESULT_ROOT/sen1floods11_alignment_audit" \
+  --workers 4
 
 "$PYTHON" - "$RESULT_ROOT/experiment_manifest.json" "$EPOCHS" "$BATCH_SIZE" \
   "$BASE_CHANNELS" "$SEED" "$SPLIT_SEED" "$PERTURB_SEED" "$RATES" \
@@ -178,8 +184,15 @@ done
   --out-csv "$RESULT_ROOT/tables/response_surface.csv" \
   --out-md "$RESULT_ROOT/tables/response_surface.md"
 
+"$PYTHON" scripts/run_sen1floods11_quality_uncertainty.py \
+  --mode smoke \
+  --source-manifest manifests/sen1floods11_scl_manifest.json \
+  --data-root "$SEN1_ROOT" \
+  --result-root "$RESULT_ROOT/sen1floods11" \
+  --workers 4
+
 "$PYTHON" scripts/package_quality_uncertainty_artifacts.py \
   --root "$RESULT_ROOT" \
-  --out results/ombria_quality_uncertainty_smoke_artifacts.zip
+  --out results/quality_map_uncertainty_smoke_artifacts.zip
 
-echo "Smoke archive: results/ombria_quality_uncertainty_smoke_artifacts.zip"
+echo "Smoke archive: results/quality_map_uncertainty_smoke_artifacts.zip"

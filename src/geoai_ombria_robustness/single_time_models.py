@@ -4,6 +4,7 @@ from .models import _build_early_fusion_unet
 
 
 SINGLE_TIME_MODEL_ARCHITECTURES = (
+    "s1_only_unet",
     "early_fusion_unet",
     "quality_concat_unet",
     "hard_quality_gate",
@@ -28,8 +29,12 @@ def build_single_time_model(
             f"Unknown architecture {architecture!r}; "
             f"choose from {SINGLE_TIME_MODEL_ARCHITECTURES}"
         )
-    if optical_channels < 1 or radar_channels < 1:
-        raise ValueError("optical_channels and radar_channels must be positive")
+    if radar_channels < 1:
+        raise ValueError("radar_channels must be positive")
+    if architecture == "s1_only_unet":
+        return _build_early_fusion_unet(radar_channels, base_channels)
+    if optical_channels < 1:
+        raise ValueError("optical_channels must be positive")
     if architecture == "early_fusion_unet":
         return _build_early_fusion_unet(
             optical_channels + radar_channels,
@@ -52,9 +57,7 @@ def build_single_time_model(
         branch_channels=branch_channels,
         optical_channels=optical_channels,
         radar_channels=radar_channels,
-        gate_mode=(
-            "hard" if architecture == "hard_quality_gate" else "soft_prior"
-        ),
+        gate_mode=("hard" if architecture == "hard_quality_gate" else "soft_prior"),
     )
 
 
@@ -107,16 +110,11 @@ def _build_single_time_quality_fusion(
                     mode="area",
                 )
             quality = quality.clamp(0.0, 1.0)
-            correction = self.net(
-                torch.cat([radar, optical, quality], dim=1)
-            )
+            correction = self.net(torch.cat([radar, optical, quality], dim=1))
             if gate_mode == "hard":
                 return quality * torch.sigmoid(correction)
             prior = quality.clamp(0.05, 0.95)
-            return (
-                torch.sigmoid(torch.logit(prior) + correction)
-                * structural_present
-            )
+            return torch.sigmoid(torch.logit(prior) + correction) * structural_present
 
     class SingleTimeQualityFusionUNet(nn.Module):
         def __init__(self) -> None:
@@ -124,9 +122,7 @@ def _build_single_time_quality_fusion(
             c = base_channels
             b = branch_channels
             self.architecture = (
-                "hard_quality_gate"
-                if gate_mode == "hard"
-                else "soft_quality_prior"
+                "hard_quality_gate" if gate_mode == "hard" else "soft_quality_prior"
             )
             self.gate_mode = gate_mode
             self.quality_branch_channels = b
@@ -164,9 +160,7 @@ def _build_single_time_quality_fusion(
             return module(torch.cat([radar, optical * gate], dim=1))
 
         def forward(self, x, return_gate_maps: bool = False):
-            expected_channels = (
-                self.optical_channels + self.radar_channels + 1
-            )
+            expected_channels = self.optical_channels + self.radar_channels + 1
             if x.ndim != 4 or x.shape[1] != expected_channels:
                 raise ValueError(
                     f"{self.architecture} expects input shaped "

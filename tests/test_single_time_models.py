@@ -7,6 +7,12 @@ from geoai_ombria_robustness.single_time_models import build_single_time_model
 
 
 class SingleTimeModelTests(unittest.TestCase):
+    def test_s1_only_model_accepts_two_radar_channels(self) -> None:
+        torch = self.torch
+        model = build_single_time_model(8, "s1_only_unet")
+        inputs = torch.rand(1, 2, 64, 64)
+        self.assertEqual(tuple(model(inputs).shape), (1, 1, 64, 64))
+
     @classmethod
     def setUpClass(cls) -> None:
         try:

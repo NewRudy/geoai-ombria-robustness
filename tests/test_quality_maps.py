@@ -108,6 +108,48 @@ class QualityMapTests(unittest.TestCase):
             structured.confusion.false_unavailable,
         )
 
+    def test_random_control_also_matches_counts_inside_comparison_mask(self) -> None:
+        reference = np.ones((8, 8), dtype=bool)
+        reference[1:7, 2:6] = False
+        valid = np.zeros((8, 8), dtype=bool)
+        valid[:, :5] = True
+        structured = translate_quality_map(
+            reference,
+            shift_y=1,
+            shift_x=2,
+            fill_available=True,
+        )
+        control = random_error_control(
+            reference,
+            structured.observed,
+            np.random.default_rng(103),
+            comparison_mask=valid,
+        )
+        structured_valid = quality_map_confusion(
+            reference[valid][None, :],
+            structured.observed[valid][None, :],
+        )
+        control_valid = quality_map_confusion(
+            reference[valid][None, :],
+            control.observed[valid][None, :],
+        )
+        self.assertEqual(
+            control.confusion.false_available,
+            structured.confusion.false_available,
+        )
+        self.assertEqual(
+            control.confusion.false_unavailable,
+            structured.confusion.false_unavailable,
+        )
+        self.assertEqual(
+            control_valid.false_available,
+            structured_valid.false_available,
+        )
+        self.assertEqual(
+            control_valid.false_unavailable,
+            structured_valid.false_unavailable,
+        )
+
     def test_quality_iou_for_empty_available_union_is_one(self) -> None:
         unavailable = np.zeros((3, 3), dtype=bool)
         confusion = quality_map_confusion(unavailable, unavailable)
