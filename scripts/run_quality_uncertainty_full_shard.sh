@@ -18,7 +18,14 @@ RESULT_ROOT="results/quality_uncertainty_full_seed${SEED}"
 ARCHIVE="results/quality_map_uncertainty_full_seed${SEED}_artifacts.zip"
 
 mkdir -p "$RESULT_ROOT"
-exec > >(tee -a "$RESULT_ROOT/run.log") 2>&1
+if [ -s "$RESULT_ROOT/run.log" ]; then
+  ATTEMPT_DIR="$RESULT_ROOT/prior_attempts"
+  mkdir -p "$ATTEMPT_DIR"
+  ATTEMPT_NUMBER=$(find "$ATTEMPT_DIR" -maxdepth 1 -type f -name 'run-*.log' | wc -l)
+  ATTEMPT_NUMBER=$((ATTEMPT_NUMBER + 1))
+  mv "$RESULT_ROOT/run.log" "$ATTEMPT_DIR/run-${ATTEMPT_NUMBER}.log"
+fi
+exec > >(tee "$RESULT_ROOT/run.log") 2>&1
 export PYTHONUNBUFFERED=1
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 
@@ -106,7 +113,7 @@ passed = (
     and runtime["repository_dirty_tracked"] is False
     and smoke["status"] == "pass"
     and smoke["audit"]["full_authorized"] is True
-    and equivalence["status"] == "pass"
+    and equivalence["status"] == "pass-with-authorized-evaluation-hotfix"
     and ombria["status"] == "pass"
     and ombria["active_seed"] == seed
     and external["status"] == "pass"
@@ -120,6 +127,11 @@ gate = {
     "active_seed": seed,
     "smoke_authorized": smoke["audit"]["full_authorized"],
     "smoke_core_equivalence": equivalence["status"],
+    "authorized_evaluation_hotfix": (
+        equivalence["authorized_exceptions"]
+        ["scripts/evaluate_sen1floods11_quality_uncertainty.py"]
+        ["regression_status"]
+    ),
     "cuda_conv2d_gate": runtime["cuda_conv2d_gate"],
     "ombria_gate": ombria["status"],
     "sen1floods11_gate": external["status"],

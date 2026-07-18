@@ -2,6 +2,32 @@
 
 Status: seed-sharded execution plan frozen before the first Full outcome
 
+## Pre-score evaluator correction
+
+The first seed-7 attempt stopped before writing any Sen1Floods11 evaluation
+table. One official chip had zero valid hand-label pixels, while the evaluator
+incorrectly assumed that every chip had at least one valid target pixel and
+raised `ValueError: reference must not be empty` during valid-domain quality
+accounting.
+
+The authorized correction is restricted to that empty evaluation domain:
+
+- the chip remains in the frozen 446-chip manifest;
+- it contributes zero valid-domain confusion counts;
+- `valid_target_pixels=0` and `has_valid_target=false` remain explicit in the
+  per-chip table;
+- its undefined valid-domain mean probability is written as an empty value,
+  not `NaN`;
+- data preparation, perturbations, route definitions, training, checkpoints,
+  seeds, rates, splits, and OMBRIA evaluation are unchanged.
+
+The failure was reproduced before the fix by the dedicated all-invalid-chip
+test and the same test passed afterward. Existing checkpoints from the failed
+attempt may be resumed because both training implementations and their frozen
+configuration are byte-identical. The previous failed `run.log` is retained
+under `prior_attempts/`; the current attempt receives a fresh log so the final
+gate can distinguish historical failure evidence from current execution.
+
 ## Why Full is sharded
 
 The Smoke run completed the complete code path but used one seed, two epochs,

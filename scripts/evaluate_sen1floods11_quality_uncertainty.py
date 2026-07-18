@@ -14,6 +14,7 @@ import numpy as np
 sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 
 from geoai_ombria_robustness.quality_maps import (  # noqa: E402
+    QualityMapConfusion,
     quality_map_confusion,
 )
 from geoai_ombria_robustness.sen1floods11 import (  # noqa: E402
@@ -207,6 +208,56 @@ def event_equal_iou(event_counts: dict[str, Counts]) -> float:
     return float(np.mean([metrics(counts)["iou"] for counts in event_counts.values()]))
 
 
+def quality_confusion_on_valid_target(
+    reference: np.ndarray,
+    observed: np.ndarray,
+    valid_target: np.ndarray,
+) -> QualityMapConfusion:
+    """Measure quality-map errors only where segmentation labels are valid.
+
+    Some official Sen1Floods11 chips contain no valid hand-label pixels. They
+    remain in the frozen 446-chip manifest for provenance and coverage, but
+    contribute zero counts to valid-domain statistics. Quality IoU follows the
+    existing empty-union identity convention (1.0); callers retain the valid
+    pixel count so this value is never mistaken for observed evidence.
+    """
+
+    reference = np.asarray(reference)
+    observed = np.asarray(observed)
+    valid_target = np.asarray(valid_target, dtype=bool)
+    if reference.shape != observed.shape or reference.shape != valid_target.shape:
+        raise ValueError(
+            "reference, observed, and valid_target must have equal shapes"
+        )
+    if valid_target.size == 0:
+        raise ValueError("valid_target map must not be empty")
+    if not valid_target.any():
+        return QualityMapConfusion(
+            available_pixels=0,
+            unavailable_pixels=0,
+            true_available=0,
+            true_unavailable=0,
+            false_available=0,
+            false_unavailable=0,
+            false_available_rate=0.0,
+            false_unavailable_rate=0.0,
+            quality_iou=1.0,
+        )
+    return quality_map_confusion(
+        reference[valid_target][None, :],
+        observed[valid_target][None, :],
+    )
+
+
+def masked_mean_probability(values, valid_target) -> float | None:
+    """Return no value, rather than NaN, for an empty labeled domain."""
+
+    valid_pixels = int(valid_target.sum().item())
+    if valid_pixels == 0:
+        return None
+    return float(values[valid_target].mean().item())
+
+
 class EvaluationDataset:
     def __init__(
         self,
@@ -252,11 +303,10 @@ class EvaluationDataset:
                     complete_optical_absence=(condition.complete_optical_absence),
                 )
                 confusion = condition.perturbation.confusion
-                valid_reference = chip.reference_quality[chip.valid_target]
-                valid_observed = condition.observed[chip.valid_target]
-                valid_confusion = quality_map_confusion(
-                    valid_reference[None, :],
-                    valid_observed[None, :],
+                valid_confusion = quality_confusion_on_valid_target(
+                    chip.reference_quality,
+                    condition.observed,
+                    chip.valid_target,
                 )
                 quality_values = np.array(
                     [
@@ -313,6 +363,7 @@ def evaluate_repetition(
                 pred = prediction[batch_index]
                 target_mask = truth[batch_index]
                 valid_mask = valid[batch_index]
+                valid_target_pixels = int(valid_mask.sum().item())
                 counts = Counts(
                     tp=int((pred & target_mask & valid_mask).sum().item()),
                     fp=int((pred & ~target_mask & valid_mask).sum().item()),
@@ -346,8 +397,10 @@ def evaluate_repetition(
                         "valid_quality_false_available_rate": quality[11],
                         "valid_quality_false_unavailable_rate": quality[12],
                         "valid_quality_iou": quality[13],
-                        "mean_probability": float(
-                            probability[batch_index][valid_mask].mean().item()
+                        "valid_target_pixels": valid_target_pixels,
+                        "has_valid_target": valid_target_pixels > 0,
+                        "mean_probability": masked_mean_probability(
+                            probability[batch_index], valid_mask
                         ),
                         "tp": counts.tp,
                         "fp": counts.fp,
