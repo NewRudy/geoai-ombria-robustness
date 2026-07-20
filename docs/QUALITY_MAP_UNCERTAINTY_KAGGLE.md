@@ -87,6 +87,13 @@ Create a fresh Kaggle notebook with GPU and Internet enabled, import
 All**. Do not edit the pinned experiment commit, official SMAGNet commit, seed,
 epochs, subset sizes, or conditions.
 
+If an earlier attempt stopped in `ensure_cuda_compat.py`, discard that Session
+before importing the current notebook. The failed process may have partially
+replaced the preinstalled PyTorch stack. The revised preflight records the
+NVIDIA device, compute capability, installed torch distribution, and free disk;
+it refuses a CPU Session before changing packages and frees an incompatible
+preinstalled CUDA stack before installing the P100-compatible build.
+
 Download and return exactly:
 
 ```text

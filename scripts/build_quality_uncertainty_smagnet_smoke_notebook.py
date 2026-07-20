@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "notebooks" / "kaggle_quality_uncertainty_smagnet_smoke.ipynb"
 REPOSITORY = "https://github.com/NewRudy/geoai-ombria-robustness.git"
-SOURCE_COMMIT = "ccc4aea4487558d5cfa9f98fda5ab2d1f58e2797"
+SOURCE_COMMIT = "8b5a4f9ed7d0393a3b9259451f7e7dd3089f5d64"
 OFFICIAL_COMMIT = "4371df08e6ca3b9d71c0385ad57b589830469a0c"
 OFFICIAL_SOURCE_SHA256 = (
     "daf00d0533ca7865b4bd7b47404f1c0fa42e4a0bdc70706dee45bedcc1420f25"
@@ -37,7 +37,7 @@ def build() -> dict[str, object]:
 import hashlib, json, os, shutil, subprocess, sys
 
 WORKING = Path('/kaggle/working')
-project = WORKING / 'geoai-ombria-robustness-smagnet-smoke-ccc4aea'
+project = WORKING / 'geoai-ombria-robustness-smagnet-smoke-8b5a4f9'
 os.chdir(WORKING)
 if project.exists():
     shutil.rmtree(project)
@@ -63,6 +63,11 @@ assert subprocess.run(['git', 'diff', '--cached', '--quiet']).returncode == 0
 print('frozen experiment commit:', commit)
 """
     dependencies = """subprocess.run(
+    [sys.executable, 'scripts/ensure_cuda_compat.py'],
+    check=True,
+)
+subprocess.run([sys.executable, 'scripts/check_cuda_runtime.py'], check=True)
+subprocess.run(
     [
         sys.executable,
         '-m',
@@ -70,17 +75,43 @@ print('frozen experiment commit:', commit)
         'install',
         '-q',
         'rasterio>=1.4',
-        'segmentation-models-pytorch==0.5.0',
         'scikit-learn>=1.3',
         'tensorboard',
         'pandas',
         'tqdm',
         'matplotlib',
+        'timm>=0.9',
+        'huggingface-hub>=0.24',
+        'safetensors>=0.3.1',
+        'pillow>=8',
     ],
     check=True,
 )
-subprocess.run([sys.executable, 'scripts/ensure_cuda_compat.py'], check=True)
+subprocess.run(
+    [
+        sys.executable,
+        '-m',
+        'pip',
+        'install',
+        '-q',
+        '--no-deps',
+        'segmentation-models-pytorch==0.5.0',
+    ],
+    check=True,
+)
 subprocess.run([sys.executable, 'scripts/check_cuda_runtime.py'], check=True)
+subprocess.run(
+    [
+        sys.executable,
+        '-c',
+        (
+            "import segmentation_models_pytorch as smp; "
+            "assert smp.__version__ == '0.5.0', smp.__version__; "
+            "print('segmentation-models-pytorch:', smp.__version__)"
+        ),
+    ],
+    check=True,
+)
 test_env = os.environ.copy()
 test_env['PYTHONPATH'] = str(project / 'src')
 subprocess.run(
@@ -225,6 +256,8 @@ display(FileLink(str(artifact)))
                 "quality-map uncertainty evaluation path. It uses seed 7, two "
                 "epochs, 24/12/12/4 records, 16 conditions, and one perturbation "
                 "repetition.\n\n"
+                "Start from a fresh Kaggle GPU Session; do not reuse a Session "
+                "that previously failed during CUDA compatibility setup.\n\n"
                 "**This is a published-architecture execution gate. Smoke scores "
                 "are prohibited from the manuscript. Do not change the source "
                 "commit, official commit, seed, epochs, samples, or conditions.**\n"
