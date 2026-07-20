@@ -73,8 +73,32 @@ Do not edit source commit, routes, epochs, rates, repetitions, datasets, or
 checkpoint rules. If a shard fails, return its final traceback rather than
 reducing the protocol.
 
-## Full interpretation hold
+## Core Full completion
 
-Do not merge or interpret one shard manually. Manuscript evidence is generated
-only after all five core seed artifacts, the separate SMAGNet gate, the final
-merge audit, paired uncertainty, and stop/success gates are complete.
+All five frozen core shards (`7`, `13`, `21`, `29`, and `37`) have now passed
+the local shard-set gate. Their paired core analysis is generated offline; do
+not manually recompute or selectively copy shard scores from Kaggle.
+
+## Official SMAGNet Smoke
+
+The remaining published-architecture gate starts with one frozen Smoke run.
+Create a fresh Kaggle notebook with GPU and Internet enabled, import
+`notebooks/kaggle_quality_uncertainty_smagnet_smoke.ipynb`, and choose **Run
+All**. Do not edit the pinned experiment commit, official SMAGNet commit, seed,
+epochs, subset sizes, or conditions.
+
+Download and return exactly:
+
+```text
+quality_map_uncertainty_smagnet_smoke_artifacts.zip
+```
+
+This run imports the byte-verified official architecture, trains the dual
+outputs for two epochs on the frozen 24/12 subset, evaluates 16 conditions on
+the 12/4 test/Bolivia subset, and verifies every packaged file hash. Its scores
+are pipeline-only and prohibited from the manuscript.
+
+The five SMAGNet Full seed notebooks remain intentionally unreleased. They are
+generated only after this returned Smoke archive passes an independent local
+audit. Formal manuscript Results remain on hold until the complete SMAGNet Full
+set and the post-analysis claim-evidence audit pass.
