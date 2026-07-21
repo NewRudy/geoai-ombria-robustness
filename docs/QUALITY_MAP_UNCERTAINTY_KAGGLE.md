@@ -105,7 +105,29 @@ outputs for two epochs on the frozen 24/12 subset, evaluates 16 conditions on
 the 12/4 test/Bolivia subset, and verifies every packaged file hash. Its scores
 are pipeline-only and prohibited from the manuscript.
 
-The five SMAGNet Full seed notebooks remain intentionally unreleased. They are
-generated only after this returned Smoke archive passes an independent local
-audit. Formal manuscript Results remain on hold until the complete SMAGNet Full
-set and the post-analysis claim-evidence audit pass.
+The returned Smoke archive passed all 10 independent local audit checks on
+2026-07-21. Its SHA-256 is
+`eedaf8027e5720ff1ee72f39bc98f12e56a82928fb13a988f2bfe96075c1b0e9`.
+Smoke scores remain pipeline-only and prohibited from the manuscript.
+
+Seed 7 is now released as:
+
+```text
+notebooks/kaggle_quality_uncertainty_smagnet_full_seed7.ipynb
+```
+
+Run it in a fresh Kaggle GPU Session with Internet enabled and download exactly:
+
+```text
+quality_map_uncertainty_smagnet_full_seed7_artifacts.zip
+```
+
+The notebook uses 200 epochs, all 446 prepared records, 54 conditions, and
+three perturbation repetitions. It is resumable within the same live Session.
+Do not alter the pinned source, official SMAGNet commit, seed, epochs, records,
+conditions, or repetitions. The seed-7 scores remain scientifically
+uninterpretable until all five Full shards pass independent audit and are
+paired offline with the frozen seed-matched Sentinel-1 reference. Seeds 13,
+21, 29, and 37 remain held until the returned seed-7 Full archive passes its
+local gate. Formal manuscript Results remain on hold until the complete set and
+post-analysis claim-evidence audit pass.

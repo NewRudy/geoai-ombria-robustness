@@ -26,4 +26,5 @@ notebooks/*
 !notebooks/kaggle_quality_uncertainty_smoke.ipynb
 !notebooks/kaggle_quality_uncertainty_full_seed7.ipynb
 !notebooks/kaggle_quality_uncertainty_smagnet_smoke.ipynb
+!notebooks/kaggle_quality_uncertainty_smagnet_full_seed7.ipynb
 scratch/

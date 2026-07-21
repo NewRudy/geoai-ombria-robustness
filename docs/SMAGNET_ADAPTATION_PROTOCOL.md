@@ -1,6 +1,6 @@
 # Official SMAGNet Adaptation Protocol
 
-Status: frozen before the official-architecture Smoke outcome
+Status: frozen; official-architecture Smoke passed independent local audit on 2026-07-21, and Full seed 7 is released
 
 Role: closest published architecture gate for the quality-map uncertainty Article
 
@@ -48,8 +48,22 @@ SMAGNet is a published-architecture comparison, not a capacity-controlled causal
 
 Smoke uses seed 7, two epochs, the frozen 24/12/12/4 train/validation/test/Bolivia subset, 16 error conditions, and one perturbation repetition. It must verify the official source and license hashes, CUDA execution, dual-path training, clean-validation checkpointing, validation threshold selection, the complete-absence identity, all test and Bolivia conditions, per-chip/per-event exports, finite metrics, and artifact hashes. Smoke scores are prohibited from the manuscript.
 
+The returned Smoke archive passed the independent fail-closed audit. Its
+SHA-256 is
+`eedaf8027e5720ff1ee72f39bc98f12e56a82928fb13a988f2bfe96075c1b0e9`;
+all 10 audit checks passed, including reconstruction of every reported metric
+from confusion counts and chip-level equality of structured-error and matched
+random error rates. This authorizes Full execution only; it does not authorize
+scientific interpretation of Smoke scores.
+
 ## Full gate
 
 After an independently returned Smoke archive passes local audit, Full is released as five immutable seed shards: 7, 13, 21, 29, and 37. Every shard uses 200 epochs, all 446 prepared records, the 54 frozen independent/structured/matched/absence conditions, three perturbation repetitions, and separate test and Bolivia outputs. A seed shard remains scientifically uninterpretable until all five official-architecture shards pass and are paired offline with the already frozen seed-matched Sentinel-1 reference.
+
+Seed 7 is the first released Full shard. The remaining seed notebooks are held
+back operationally until the returned seed-7 archive passes its independent
+local audit; this sequencing can detect packaging or Full-only defects before
+duplicating them across the remaining four runs and does not change the frozen
+scientific protocol.
 
 The allowed fallback remains unchanged: a mechanism-matched reimplementation is considered only after an official-source adaptation failure is reproduced and documented before any Full SMAGNet score is inspected. Runtime inconvenience or an unfavorable result is not a fallback trigger.

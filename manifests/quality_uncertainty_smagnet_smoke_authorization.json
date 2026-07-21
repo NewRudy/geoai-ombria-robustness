@@ -1,0 +1,38 @@
+{
+  "schema": "geoai-quality-map-uncertainty-smagnet-smoke-authorization-v1",
+  "status": "pass",
+  "audit_date": "2026-07-21",
+  "artifact": {
+    "filename": "quality_map_uncertainty_smagnet_smoke_artifacts.zip",
+    "bytes": 208460075,
+    "members": 29,
+    "manifest_records": 28,
+    "sha256": "eedaf8027e5720ff1ee72f39bc98f12e56a82928fb13a988f2bfe96075c1b0e9"
+  },
+  "experiment_source": {
+    "commit": "8b5a4f9ed7d0393a3b9259451f7e7dd3089f5d64",
+    "official_smagnet_commit": "4371df08e6ca3b9d71c0385ad57b589830469a0c",
+    "official_smagnet_source_sha256": "daf00d0533ca7865b4bd7b47404f1c0fa42e4a0bdc70706dee45bedcc1420f25"
+  },
+  "audit": {
+    "checks_passed": 10,
+    "checks_failed": 0,
+    "archive_integrity": "pass",
+    "runtime_and_official_source": "pass",
+    "frozen_protocol_and_boundary": "pass",
+    "data_preparation": "pass",
+    "training_and_checkpoint": "pass",
+    "evaluation_test_integrity": "pass",
+    "evaluation_bolivia_integrity": "pass",
+    "logs_and_payload": "pass",
+    "full_authorized": true,
+    "smoke_scores_publishable": false,
+    "scientific_interpretation_allowed": false
+  },
+  "release": {
+    "released_full_seed": 7,
+    "remaining_full_seeds": [13, 21, 29, 37],
+    "next_gate": "Independently audit the returned seed-7 Full shard before releasing seed 13."
+  },
+  "claim_boundary": "Smoke validates the official-source execution, fallback identity, evaluation, and packaging pipeline only. Its scores are prohibited from manuscript claims."
+}
