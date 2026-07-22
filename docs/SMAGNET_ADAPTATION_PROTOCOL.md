@@ -1,6 +1,6 @@
 # Official SMAGNet Adaptation Protocol
 
-Status: frozen; official-architecture Smoke passed independent local audit on 2026-07-21, and Full seed 7 is released
+Status: frozen; Smoke and Full seed 7 passed independent local audit, and Full seed 13 is released
 
 Role: closest published architecture gate for the quality-map uncertainty Article
 
@@ -60,10 +60,14 @@ scientific interpretation of Smoke scores.
 
 After an independently returned Smoke archive passes local audit, Full is released as five immutable seed shards: 7, 13, 21, 29, and 37. Every shard uses 200 epochs, all 446 prepared records, the 54 frozen independent/structured/matched/absence conditions, three perturbation repetitions, and separate test and Bolivia outputs. A seed shard remains scientifically uninterpretable until all five official-architecture shards pass and are paired offline with the already frozen seed-matched Sentinel-1 reference.
 
-Seed 7 is the first released Full shard. The remaining seed notebooks are held
-back operationally until the returned seed-7 archive passes its independent
-local audit; this sequencing can detect packaging or Full-only defects before
-duplicating them across the remaining four runs and does not change the frozen
-scientific protocol.
+Full seed 7 passed all 10 independent audit checks on 2026-07-22. The archive
+SHA-256 is
+`db64d42d53615301cb4818ec960f9a50cbb08a299ae28cf5f6668074215c36f7`.
+The audit independently reconstructed the 200-epoch trajectory, checkpoint and
+threshold links, all summary/per-chip/per-event metrics, all 14 structured to
+matched-random error-rate pairs, and the complete-absence boundary. Seed 13 is
+therefore released. Seeds 21, 29, and 37 remain held until the immediately
+preceding shard passes local audit. This operational sequencing does not change
+the frozen scientific protocol.
 
 The allowed fallback remains unchanged: a mechanism-matched reimplementation is considered only after an official-source adaptation failure is reproduced and documented before any Full SMAGNet score is inspected. Runtime inconvenience or an unfavorable result is not a fallback trigger.

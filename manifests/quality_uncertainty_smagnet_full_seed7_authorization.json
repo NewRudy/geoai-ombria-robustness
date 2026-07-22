@@ -1,0 +1,47 @@
+{
+  "schema": "geoai-quality-map-uncertainty-smagnet-full-shard-authorization-v1",
+  "status": "pass",
+  "audit_date": "2026-07-22",
+  "artifact": {
+    "filename": "quality_map_uncertainty_smagnet_full_seed7_artifacts.zip",
+    "bytes": 209874008,
+    "members": 29,
+    "manifest_records": 28,
+    "sha256": "db64d42d53615301cb4818ec960f9a50cbb08a299ae28cf5f6668074215c36f7"
+  },
+  "experiment_source": {
+    "commit": "8b5a4f9ed7d0393a3b9259451f7e7dd3089f5d64",
+    "official_smagnet_commit": "4371df08e6ca3b9d71c0385ad57b589830469a0c",
+    "official_smagnet_source_sha256": "daf00d0533ca7865b4bd7b47404f1c0fa42e4a0bdc70706dee45bedcc1420f25"
+  },
+  "shard": {
+    "seed": 7,
+    "epochs": 200,
+    "prepared_records": 446,
+    "conditions": 54,
+    "repetitions": 3
+  },
+  "audit": {
+    "checks_passed": 10,
+    "checks_failed": 0,
+    "archive_integrity": "pass",
+    "runtime_and_official_source": "pass",
+    "frozen_protocol_and_boundary": "pass",
+    "data_preparation": "pass",
+    "training_and_checkpoint": "pass",
+    "evaluation_test_integrity": "pass",
+    "evaluation_bolivia_integrity": "pass",
+    "logs_and_payload": "pass",
+    "matched_control_max_rate_difference": 0.0,
+    "complete_absence": "pass",
+    "shard_accepted": true,
+    "shard_scores_publishable": false,
+    "scientific_interpretation_allowed": false
+  },
+  "release": {
+    "released_full_seed": 13,
+    "remaining_full_seeds": [21, 29, 37],
+    "next_gate": "Independently audit the returned seed-13 Full shard before releasing seed 21."
+  },
+  "claim_boundary": "One SMAGNet Full shard is execution evidence only. Scores remain locked until all five official-architecture seeds pass audit and are paired offline with the frozen seed-matched Sentinel-1 reference."
+}

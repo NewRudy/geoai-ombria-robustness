@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "notebooks" / "kaggle_quality_uncertainty_smagnet_full_seed7.ipynb"
 REPOSITORY = "https://github.com/NewRudy/geoai-ombria-robustness.git"
 SOURCE_COMMIT = "8b5a4f9ed7d0393a3b9259451f7e7dd3089f5d64"
 OFFICIAL_COMMIT = "4371df08e6ca3b9d71c0385ad57b589830469a0c"
@@ -15,7 +15,15 @@ OFFICIAL_SOURCE_SHA256 = (
 SMOKE_ARTIFACT_SHA256 = (
     "eedaf8027e5720ff1ee72f39bc98f12e56a82928fb13a988f2bfe96075c1b0e9"
 )
-SEED = 7
+RELEASED_SEEDS = (7, 13)
+FULL_SHARD_AUTHORIZATIONS = {
+    13: {
+        "previous_seed": 7,
+        "artifact_sha256": (
+            "db64d42d53615301cb4818ec960f9a50cbb08a299ae28cf5f6668074215c36f7"
+        ),
+    }
+}
 
 
 def markdown(source: str) -> dict[str, object]:
@@ -36,7 +44,39 @@ def code(source: str) -> dict[str, object]:
     }
 
 
-def build() -> dict[str, object]:
+def output_path(seed: int) -> Path:
+    return (
+        ROOT
+        / "notebooks"
+        / f"kaggle_quality_uncertainty_smagnet_full_seed{seed}.ipynb"
+    )
+
+
+def build(seed: int = 7) -> dict[str, object]:
+    if seed not in RELEASED_SEEDS:
+        raise ValueError(f"Released SMAGNet Full seeds are {RELEASED_SEEDS}")
+    previous = FULL_SHARD_AUTHORIZATIONS.get(seed)
+    prior_gate = ""
+    if previous is not None:
+        prior_gate = f"""
+PRIOR_FULL_AUDIT = {{
+    'status': 'pass',
+    'seed': {previous['previous_seed']},
+    'artifact_sha256': {previous['artifact_sha256']!r},
+    'shard_accepted': True,
+    'next_seed_authorized': True,
+    'shard_scores_publishable': False,
+}}
+assert PRIOR_FULL_AUDIT['status'] == 'pass'
+assert PRIOR_FULL_AUDIT['seed'] == {previous['previous_seed']}
+assert PRIOR_FULL_AUDIT['shard_accepted'] is True
+assert PRIOR_FULL_AUDIT['next_seed_authorized'] is True
+assert PRIOR_FULL_AUDIT['shard_scores_publishable'] is False
+print(
+    'independently audited prior Full SHA-256:',
+    PRIOR_FULL_AUDIT['artifact_sha256'],
+)
+"""
     setup = f"""from pathlib import Path
 import hashlib
 import json
@@ -46,7 +86,7 @@ import subprocess
 import sys
 
 WORKING = Path('/kaggle/working')
-project = WORKING / 'geoai-ombria-robustness-smagnet-full-seed7-8b5a4f9'
+project = WORKING / 'geoai-ombria-robustness-smagnet-full-seed{seed}-8b5a4f9'
 os.chdir(WORKING)
 if not project.exists():
     project.mkdir(parents=True)
@@ -85,12 +125,13 @@ SMOKE_AUDIT = {{
 assert SMOKE_AUDIT['status'] == 'pass'
 assert SMOKE_AUDIT['full_authorized'] is True
 assert SMOKE_AUDIT['smoke_scores_publishable'] is False
+{prior_gate}
 print('frozen experiment commit:', commit)
 print('independently audited Smoke SHA-256:', SMOKE_AUDIT['artifact_sha256'])
-print('Full seed released:', {SEED})
+print('Full seed released:', {seed})
 print(
     'resuming existing result directory:',
-    (project / 'results' / 'quality_uncertainty_smagnet_full_seed7').exists(),
+    (project / 'results' / 'quality_uncertainty_smagnet_full_seed{seed}').exists(),
 )
 """
     dependencies = """subprocess.run(
@@ -153,12 +194,12 @@ subprocess.run(
 """
     run = f"""from datetime import datetime, timezone
 
-result_root = project / 'results' / 'quality_uncertainty_smagnet_full_seed{SEED}'
+result_root = project / 'results' / 'quality_uncertainty_smagnet_full_seed{seed}'
 data_root = project / 'external' / 'Sen1Floods11_quality_uncertainty'
 smagnet_root = project / 'external' / 'SMAGNet_4371df0'
 source_manifest = project / 'manifests' / 'sen1floods11_scl_manifest.json'
 official_manifest = result_root / 'official_source_manifest.json'
-artifact = project / 'results' / 'quality_map_uncertainty_smagnet_full_seed{SEED}_artifacts.zip'
+artifact = project / 'results' / 'quality_map_uncertainty_smagnet_full_seed{seed}_artifacts.zip'
 result_root.mkdir(parents=True, exist_ok=True)
 log_path = result_root / 'run.log'
 env = os.environ.copy()
@@ -188,7 +229,7 @@ def run_logged(command):
 
 with log_path.open('a', encoding='utf-8') as log:
     log.write(
-        '=== official SMAGNet quality-uncertainty Full seed {SEED} '
+        '=== official SMAGNet quality-uncertainty Full seed {seed} '
         + datetime.now(timezone.utc).isoformat()
         + ' ===\\n'
     )
@@ -229,7 +270,7 @@ try:
             '--mode',
             'full',
             '--seed',
-            '{SEED}',
+            '{seed}',
             '--source-manifest',
             source_manifest,
             '--data-root',
@@ -290,7 +331,7 @@ with ZipFile(artifact) as archive:
     )
     manifest = json.loads(archive.read(manifest_name))
     root = manifest['root']
-    assert root == 'quality_uncertainty_smagnet_full_seed{SEED}'
+    assert root == 'quality_uncertainty_smagnet_full_seed{seed}'
     expected_names = {{root + '/' + record['path'] for record in manifest['files']}}
     assert expected_names == set(names) - {{manifest_name}}
     for record in manifest['files']:
@@ -306,10 +347,10 @@ with ZipFile(artifact) as archive:
     gate = document('/published_architecture_gate.json')
     plan = document('/experiment_plan.json')
     selected = document('/sen1floods11_selected_manifest.json')
-    configuration = document('/runs/smagnet_official_seed7/config.json')
-    normalization = document('/runs/smagnet_official_seed7/normalization.json')
+    configuration = document('/runs/smagnet_official_seed{seed}/config.json')
+    normalization = document('/runs/smagnet_official_seed{seed}/normalization.json')
     checkpoint_manifest = document(
-        '/runs/smagnet_official_seed7/checkpoint_manifest.json'
+        '/runs/smagnet_official_seed{seed}/checkpoint_manifest.json'
     )
     source = gate['official_source']
     fallback = gate['fallback_boundary']
@@ -320,7 +361,7 @@ with ZipFile(artifact) as archive:
     assert gate['status'] == 'pass'
     assert gate['mode'] == 'full'
     assert gate['pipeline_only'] is False
-    assert gate['model_seed'] == {SEED}
+    assert gate['model_seed'] == {seed}
     assert gate['source_commit'] == {SOURCE_COMMIT!r}
     assert gate['scientific_interpretation_allowed'] is False
     assert source['commit'] == {OFFICIAL_COMMIT!r}
@@ -337,7 +378,7 @@ with ZipFile(artifact) as archive:
     assert fallback['maximum_fused_sar_logit_difference'] == 0.0
     assert fallback['maximum_masked_gate'] == 0.0
     assert plan['planned_full_seeds'] == [7, 13, 21, 29, 37]
-    assert plan['seed'] == {SEED}
+    assert plan['seed'] == {seed}
     assert plan['pipeline_only'] is False
     assert plan['condition_count'] == 54
     assert plan['repetitions'] == 3
@@ -345,7 +386,7 @@ with ZipFile(artifact) as archive:
     assert configuration['validation_count'] == 89
     assert configuration['validation_patches'] == 356
     assert configuration['epochs'] == 200
-    assert configuration['seed'] == {SEED}
+    assert configuration['seed'] == {seed}
     assert configuration['normalization'] == normalization
     assert normalization['source'] == 'frozen training records only'
     assert normalization['optical_order'] == [
@@ -362,7 +403,7 @@ with ZipFile(artifact) as archive:
 
     checkpoint_name = next(
         name for name in names
-        if name.endswith('/runs/smagnet_official_seed7/best_validation_loss.pt')
+        if name.endswith('/runs/smagnet_official_seed{seed}/best_validation_loss.pt')
     )
     assert archive_sha256(archive, checkpoint_name) == checkpoint_manifest[
         'best_checkpoint_sha256'
@@ -374,11 +415,11 @@ with ZipFile(artifact) as archive:
     ):
         summary_name = next(
             name for name in names
-            if name.endswith(f'/evaluations/seed7/{{split}}/summary_metrics.csv')
+            if name.endswith(f'/evaluations/seed{seed}/{{split}}/summary_metrics.csv')
         )
         chip_name = next(
             name for name in names
-            if name.endswith(f'/evaluations/seed7/{{split}}/per_chip_metrics.csv')
+            if name.endswith(f'/evaluations/seed{seed}/{{split}}/per_chip_metrics.csv')
         )
         rows = list(csv.DictReader(io.StringIO(archive.read(summary_name).decode())))
         chips = list(csv.DictReader(io.StringIO(archive.read(chip_name).decode())))
@@ -441,10 +482,10 @@ display(FileLink(str(artifact)))
     return {
         "cells": [
             markdown(
-                "# Official SMAGNet quality-map uncertainty Full — seed 7\n\n"
-                "This immutable notebook is released only because the returned "
-                "official-architecture Smoke archive passed an independent local "
-                "integrity and numerical audit. It trains the byte-verified "
+                f"# Official SMAGNet quality-map uncertainty Full — seed {seed}\n\n"
+                "This immutable notebook is released only after every preceding "
+                "execution gate passed an independent local integrity and "
+                "numerical audit. It trains the byte-verified "
                 "official SMAGNet architecture for 200 epochs on all 252/89 "
                 "training/validation records, then evaluates 54 frozen conditions "
                 "with three repetitions on the 90-chip test split and independent "
@@ -475,10 +516,22 @@ display(FileLink(str(artifact)))
     }
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Build one authorized official-SMAGNet Full Kaggle notebook."
+    )
+    parser.add_argument("--seed", type=int, choices=RELEASED_SEEDS, default=7)
+    return parser.parse_args()
+
+
 def main() -> None:
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(build(), indent=1) + "\n", encoding="utf-8")
-    print(OUT)
+    args = parse_args()
+    output = output_path(args.seed)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(build(args.seed), indent=1) + "\n", encoding="utf-8"
+    )
+    print(output)
 
 
 if __name__ == "__main__":

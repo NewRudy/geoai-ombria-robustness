@@ -127,7 +127,23 @@ three perturbation repetitions. It is resumable within the same live Session.
 Do not alter the pinned source, official SMAGNet commit, seed, epochs, records,
 conditions, or repetitions. The seed-7 scores remain scientifically
 uninterpretable until all five Full shards pass independent audit and are
-paired offline with the frozen seed-matched Sentinel-1 reference. Seeds 13,
-21, 29, and 37 remain held until the returned seed-7 Full archive passes its
-local gate. Formal manuscript Results remain on hold until the complete set and
-post-analysis claim-evidence audit pass.
+paired offline with the frozen seed-matched Sentinel-1 reference.
+
+The returned seed-7 Full archive passed all 10 independent audit checks on
+2026-07-22. Its SHA-256 is
+`db64d42d53615301cb4818ec960f9a50cbb08a299ae28cf5f6668074215c36f7`.
+Seed 13 is now released as:
+
+```text
+notebooks/kaggle_quality_uncertainty_smagnet_full_seed13.ipynb
+```
+
+Run it in a fresh Kaggle GPU Session with Internet enabled and download exactly:
+
+```text
+quality_map_uncertainty_smagnet_full_seed13_artifacts.zip
+```
+
+Seeds 21, 29, and 37 remain held until the immediately preceding returned shard
+passes its local gate. Formal manuscript Results remain on hold until the
+complete five-seed set and post-analysis claim-evidence audit pass.
